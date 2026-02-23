@@ -27,6 +27,9 @@ env/
 htmlcov/
 .pytest_cache/
 
+# Linting
+.ruff_cache/
+
 # OS
 .DS_Store
 Thumbs.db
