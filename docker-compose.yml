@@ -1,0 +1,42 @@
+# Multi-service deployment: research agent + research-kb knowledge base
+#
+# Usage:
+#   docker-compose up              # Start both services
+#   docker-compose run agent "What are the assumptions of DML?"
+
+services:
+  # Research-KB: knowledge base MCP server (must be built separately)
+  research-kb:
+    image: research-kb:latest
+    build:
+      context: ../research-kb
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=sqlite:///data/research.db
+    volumes:
+      - research-kb-data:/app/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # Research Agent: LangGraph multi-agent system
+  agent:
+    build: .
+    depends_on:
+      research-kb:
+        condition: service_healthy
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - MCP_TRANSPORT=http
+      - RESEARCH_KB_URL=http://research-kb:8000
+      - PLANNING_MODEL=claude-haiku-4-5-20251001
+      - SYNTHESIS_MODEL=claude-sonnet-4-6
+    stdin_open: true
+    tty: true
+
+volumes:
+  research-kb-data:

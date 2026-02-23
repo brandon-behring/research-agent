@@ -1,0 +1,253 @@
+"""Unit tests for individual agent nodes.
+
+Each node is tested with mocked MCP client to verify:
+1. Correct MCP tool calls are made
+2. Output state updates are well-formed
+3. Error handling (MCP failures) doesn't crash the pipeline
+"""
+
+from __future__ import annotations
+
+import pytest
+
+from research_agent.config import AgentConfig
+from research_agent.mcp_client import ResearchKBClient
+from research_agent.nodes.assumption_auditor import assumption_auditor
+from research_agent.nodes.citation_analyzer import citation_analyzer
+from research_agent.nodes.concept_explorer import concept_explorer
+from research_agent.nodes.literature_search import literature_search
+from research_agent.state import ResearchState, SearchResult, SubTask
+
+
+class TestLiteratureSearch:
+    """Tests for the literature search node."""
+
+    @pytest.mark.asyncio
+    async def test_executes_all_queries(
+        self, sample_state: ResearchState, test_config: AgentConfig, mock_mcp: ResearchKBClient
+    ) -> None:
+        """Runs search for every query in every sub-task."""
+        result = await literature_search(sample_state, test_config, mock_mcp)
+
+        # 3 queries across 2 sub-tasks
+        assert mock_mcp.search.call_count == 3
+        assert "search_results" in result
+        assert len(result["search_results"]) > 0
+
+    @pytest.mark.asyncio
+    async def test_deduplicates_results(
+        self, sample_state: ResearchState, test_config: AgentConfig, mock_mcp: ResearchKBClient
+    ) -> None:
+        """Deduplicates search results by source_id."""
+        result = await literature_search(sample_state, test_config, mock_mcp)
+
+        source_ids = [r.source_id for r in result["search_results"] if r.source_id]
+        assert len(source_ids) == len(set(source_ids)), "Duplicate source_ids found"
+
+    @pytest.mark.asyncio
+    async def test_falls_back_to_fast_search(
+        self, sample_state: ResearchState, test_config: AgentConfig, mock_mcp: ResearchKBClient
+    ) -> None:
+        """Falls back to fast_search when main search fails."""
+        mock_mcp.search.side_effect = RuntimeError("MCP timeout")
+
+        result = await literature_search(sample_state, test_config, mock_mcp)
+
+        assert mock_mcp.fast_search.call_count > 0
+        assert "search_results" in result
+
+    @pytest.mark.asyncio
+    async def test_results_sorted_by_score(
+        self, sample_state: ResearchState, test_config: AgentConfig, mock_mcp: ResearchKBClient
+    ) -> None:
+        """Results are sorted by score descending."""
+        result = await literature_search(sample_state, test_config, mock_mcp)
+
+        results = result["search_results"]
+        if len(results) >= 2:
+            scores = [r.score for r in results]
+            assert scores == sorted(scores, reverse=True)
+
+    @pytest.mark.asyncio
+    async def test_produces_summary(
+        self, sample_state: ResearchState, test_config: AgentConfig, mock_mcp: ResearchKBClient
+    ) -> None:
+        """Generates a search summary."""
+        result = await literature_search(sample_state, test_config, mock_mcp)
+        assert "search_summary" in result
+        assert "results" in result["search_summary"].lower()
+
+
+class TestConceptExplorer:
+    """Tests for the concept explorer node."""
+
+    @pytest.mark.asyncio
+    async def test_explores_planned_concepts(
+        self, sample_state: ResearchState, test_config: AgentConfig, mock_mcp: ResearchKBClient
+    ) -> None:
+        """Explores concepts listed in sub-tasks."""
+        result = await concept_explorer(sample_state, test_config, mock_mcp)
+
+        assert "concepts" in result
+        assert len(result["concepts"]) > 0
+        # Should have called graph_neighborhood for each unique concept
+        assert mock_mcp.graph_neighborhood.call_count >= 1
+
+    @pytest.mark.asyncio
+    async def test_deduplicates_concepts(
+        self, test_config: AgentConfig, mock_mcp: ResearchKBClient
+    ) -> None:
+        """Doesn't explore the same concept twice."""
+        state = ResearchState(
+            query="test",
+            sub_tasks=[
+                SubTask(
+                    description="t1",
+                    concepts_to_explore=["DML", "dml", "DML"],  # Duplicates
+                ),
+            ],
+        )
+        await concept_explorer(state, test_config, mock_mcp)
+
+        # Should only call once for "DML" despite 3 entries
+        assert mock_mcp.graph_neighborhood.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_handles_exploration_failure(
+        self, sample_state: ResearchState, test_config: AgentConfig, mock_mcp: ResearchKBClient
+    ) -> None:
+        """Gracefully handles MCP failures."""
+        mock_mcp.graph_neighborhood.side_effect = RuntimeError("Concept not found")
+
+        result = await concept_explorer(sample_state, test_config, mock_mcp)
+
+        # Should return empty but not crash
+        assert "concepts" in result
+        assert "concept_map_summary" in result
+
+
+class TestCitationAnalyzer:
+    """Tests for the citation analyzer node."""
+
+    @pytest.mark.asyncio
+    async def test_analyzes_top_results(
+        self, test_config: AgentConfig, mock_mcp: ResearchKBClient
+    ) -> None:
+        """Analyzes citation networks for top search results."""
+        state = ResearchState(
+            query="test",
+            search_results=[
+                SearchResult(
+                    title="Paper A",
+                    content="...",
+                    source_id="src-001",
+                    score=0.9,
+                ),
+                SearchResult(
+                    title="Paper B",
+                    content="...",
+                    source_id="src-002",
+                    score=0.8,
+                ),
+            ],
+        )
+
+        result = await citation_analyzer(state, test_config, mock_mcp)
+
+        assert "citations" in result
+        assert len(result["citations"]) == 2
+        assert mock_mcp.citation_network.call_count == 2
+        assert mock_mcp.biblio_coupling.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_skips_results_without_source_id(
+        self, test_config: AgentConfig, mock_mcp: ResearchKBClient
+    ) -> None:
+        """Skips search results that don't have source IDs."""
+        state = ResearchState(
+            query="test",
+            search_results=[
+                SearchResult(title="No ID", content="...", source_id="", score=0.9),
+            ],
+        )
+
+        result = await citation_analyzer(state, test_config, mock_mcp)
+
+        assert len(result["citations"]) == 0
+        assert mock_mcp.citation_network.call_count == 0
+
+    @pytest.mark.asyncio
+    async def test_deduplicates_source_ids(
+        self, test_config: AgentConfig, mock_mcp: ResearchKBClient
+    ) -> None:
+        """Doesn't analyze the same source twice."""
+        state = ResearchState(
+            query="test",
+            search_results=[
+                SearchResult(title="A", content="", source_id="src-001", score=0.9),
+                SearchResult(title="A dup", content="", source_id="src-001", score=0.8),
+            ],
+        )
+
+        result = await citation_analyzer(state, test_config, mock_mcp)
+
+        assert len(result["citations"]) == 1
+
+
+class TestAssumptionAuditor:
+    """Tests for the assumption auditor node."""
+
+    @pytest.mark.asyncio
+    async def test_audits_identified_methods(
+        self, sample_state: ResearchState, test_config: AgentConfig, mock_mcp: ResearchKBClient
+    ) -> None:
+        """Audits all methods from sub-tasks."""
+        result = await assumption_auditor(sample_state, test_config, mock_mcp)
+
+        assert "assumption_audits" in result
+        assert len(result["assumption_audits"]) == 1  # Only "DML"
+        assert result["assumption_audits"][0].method_name == "DML"
+
+    @pytest.mark.asyncio
+    async def test_deduplicates_methods(
+        self, test_config: AgentConfig, mock_mcp: ResearchKBClient
+    ) -> None:
+        """Doesn't audit the same method twice."""
+        state = ResearchState(
+            query="test",
+            sub_tasks=[
+                SubTask(description="t1", methods_to_audit=["DML", "dml"]),
+                SubTask(description="t2", methods_to_audit=["DML"]),
+            ],
+        )
+
+        await assumption_auditor(state, test_config, mock_mcp)
+
+        assert mock_mcp.audit_assumptions.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_no_methods_returns_empty(
+        self, test_config: AgentConfig, mock_mcp: ResearchKBClient
+    ) -> None:
+        """Returns empty when no methods identified."""
+        state = ResearchState(
+            query="test",
+            sub_tasks=[SubTask(description="t1", methods_to_audit=[])],
+        )
+
+        result = await assumption_auditor(state, test_config, mock_mcp)
+
+        assert len(result["assumption_audits"]) == 0
+        assert "No statistical methods" in result["assumption_summary"]
+
+    @pytest.mark.asyncio
+    async def test_handles_audit_failure(
+        self, sample_state: ResearchState, test_config: AgentConfig, mock_mcp: ResearchKBClient
+    ) -> None:
+        """Records failure without crashing."""
+        mock_mcp.audit_assumptions.side_effect = RuntimeError("Method not found")
+
+        result = await assumption_auditor(sample_state, test_config, mock_mcp)
+
+        assert len(result["assumption_audits"]) == 1
+        assert "failed" in result["assumption_audits"][0].raw_output.lower()
