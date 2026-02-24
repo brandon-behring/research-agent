@@ -20,6 +20,7 @@ ruff format src/ tests/                   # Format
 # Running
 research-agent "What are the assumptions of double machine learning?"
 research-agent --verbose -o report.md "Compare DML and IV"
+research-agent --stream "What is DML?"    # Stream progress to stderr
 
 # Docker (multi-service with research-kb)
 docker-compose up                         # Start agent + research-kb

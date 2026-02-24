@@ -19,6 +19,8 @@ Design decisions:
 from __future__ import annotations
 
 import logging
+from collections.abc import AsyncGenerator
+from dataclasses import dataclass
 from typing import Any
 
 from langgraph.graph import END, StateGraph
@@ -150,3 +152,93 @@ async def run_research(query: str, config: AgentConfig | None = None) -> dict[st
 
     logger.info("Research complete. Report length: %d chars", len(final_state.get("report", "")))
     return dict(final_state)
+
+
+# ── Streaming support ──────────────────────────────────────────────────
+
+
+@dataclass
+class StreamEvent:
+    """A streaming progress event emitted during pipeline execution.
+
+    Attributes:
+        event_type: One of 'node_end', 'report_chunk', or 'complete'.
+        node_name: The graph node that produced this event.
+        data: Human-readable summary or report content.
+    """
+
+    event_type: str  # "node_end" | "report_chunk" | "complete"
+    node_name: str
+    data: str
+
+
+def _summarize_update(node_name: str, update: dict[str, Any]) -> str:
+    """Map a node update to a human-readable progress message.
+
+    Args:
+        node_name: Graph node name (e.g., 'query_planner', 'synthesis').
+        update: The state update dict emitted by the node.
+
+    Returns:
+        Short progress summary string.
+    """
+    summaries: dict[str, str] = {
+        "query_planner": f"Planned {len(update.get('sub_tasks', []))} sub-tasks",
+        "literature_search": f"Found {len(update.get('search_results', []))} search results",
+        "concept_explorer": f"Explored {len(update.get('concepts', []))} concepts",
+        "citation_analyzer": f"Analyzed {len(update.get('citations', []))} citation chains",
+        "assumption_auditor": f"Audited {len(update.get('assumption_audits', []))} methods",
+        "synthesis": f"Generated report ({len(update.get('report', ''))} chars)",
+    }
+    return summaries.get(node_name, f"Completed {node_name}")
+
+
+async def stream_research(
+    query: str, config: AgentConfig | None = None
+) -> AsyncGenerator[StreamEvent, None]:
+    """Execute the research pipeline with streaming progress events.
+
+    Yields StreamEvent for each node completion.  Uses LangGraph's native
+    ``astream(stream_mode="updates")`` which yields ``{node_name: update_dict}``
+    after each node finishes.
+
+    Args:
+        query: Research question to analyze.
+        config: Optional agent config (defaults to env-based).
+
+    Yields:
+        StreamEvent instances: node_end for each node, report_chunk for the
+        final report, and complete as the terminal event.
+    """
+    if config is None:
+        config = AgentConfig()
+
+    logger.info("Starting streaming research agent for: %s", query)
+
+    async with ResearchKBClient(config.mcp) as mcp:
+        graph = build_graph(config, mcp)
+        initial_state = ResearchState(query=query)
+
+        run_config: dict[str, Any] = {
+            "run_name": "research_agent_stream",
+            "metadata": {"query": query[:200]},
+            "tags": ["research-agent", "streaming"],
+        }
+
+        report = ""
+        async for chunk in graph.astream(
+            initial_state,
+            config=run_config,  # type: ignore[arg-type]
+            stream_mode="updates",
+        ):
+            # chunk is dict[str, dict] — one key per node that completed
+            for node_name, update in chunk.items():
+                summary = _summarize_update(node_name, update)
+                yield StreamEvent(event_type="node_end", node_name=node_name, data=summary)
+
+                # Emit report content when synthesis completes
+                if node_name == "synthesis" and "report" in update:
+                    report = update["report"]
+                    yield StreamEvent(event_type="report_chunk", node_name="synthesis", data=report)
+
+    yield StreamEvent(event_type="complete", node_name="", data=f"Report: {len(report)} chars")

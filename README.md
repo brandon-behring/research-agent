@@ -94,6 +94,9 @@ research-agent "What are the assumptions of double machine learning?"
 # With verbose logging
 research-agent -v "Compare DML and instrumental variables"
 
+# Stream progress to stderr as nodes complete
+research-agent --stream "What are the assumptions of DML?"
+
 # Save report to file
 research-agent -o report.md "How does cross-fitting reduce bias?"
 ```

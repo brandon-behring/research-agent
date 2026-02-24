@@ -15,7 +15,28 @@ from pathlib import Path
 
 from research_agent.config import AgentConfig
 from research_agent.exceptions import ResearchAgentError
-from research_agent.graph import run_research
+from research_agent.graph import run_research, stream_research
+
+
+async def _run_streaming(query: str, config: AgentConfig) -> dict[str, str]:
+    """Run the pipeline in streaming mode, printing progress to stderr.
+
+    Args:
+        query: Research question to analyze.
+        config: Agent configuration.
+
+    Returns:
+        Dict with 'report' key, matching run_research() contract.
+    """
+    report = ""
+    async for event in stream_research(query, config):
+        if event.event_type == "node_end":
+            print(f"  [{event.node_name}] {event.data}", file=sys.stderr)
+        elif event.event_type == "report_chunk":
+            report = event.data
+        elif event.event_type == "complete":
+            print(f"  {event.data}", file=sys.stderr)
+    return {"report": report}
 
 
 def main() -> None:
@@ -45,6 +66,12 @@ def main() -> None:
         "-o",
         help="Write report to file (default: stdout)",
     )
+    parser.add_argument(
+        "--stream",
+        "-s",
+        action="store_true",
+        help="Stream progress events to stderr as pipeline executes",
+    )
 
     args = parser.parse_args()
 
@@ -67,7 +94,10 @@ def main() -> None:
 
     try:
         config = AgentConfig()
-        result = asyncio.run(run_research(args.query, config))
+        if args.stream:
+            result = asyncio.run(_run_streaming(args.query, config))
+        else:
+            result = asyncio.run(run_research(args.query, config))
     except ResearchAgentError as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)

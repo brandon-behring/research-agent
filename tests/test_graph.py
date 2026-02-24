@@ -15,7 +15,13 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from research_agent.config import AgentConfig, MCPConfig, ModelConfig
-from research_agent.graph import _should_audit_assumptions, build_graph
+from research_agent.graph import (
+    StreamEvent,
+    _should_audit_assumptions,
+    _summarize_update,
+    build_graph,
+    stream_research,
+)
 from research_agent.nodes.query_planner import PlannerOutput
 from research_agent.nodes.synthesis import SynthesisReport
 from research_agent.state import ResearchState, SubTask
@@ -187,3 +193,187 @@ class TestStateModels:
         assert task.search_queries == []
         assert task.concepts_to_explore == []
         assert task.methods_to_audit == []
+
+
+class TestSummarizeUpdate:
+    """Tests for the _summarize_update helper."""
+
+    def test_query_planner_summary(self) -> None:
+        """Summarizes query planner output."""
+        update = {"sub_tasks": [{"description": "a"}, {"description": "b"}]}
+        result = _summarize_update("query_planner", update)
+        assert "2 sub-tasks" in result
+
+    def test_literature_search_summary(self) -> None:
+        """Summarizes literature search output."""
+        update = {"search_results": [1, 2, 3]}
+        result = _summarize_update("literature_search", update)
+        assert "3 search results" in result
+
+    def test_synthesis_summary(self) -> None:
+        """Summarizes synthesis output."""
+        update = {"report": "A" * 500}
+        result = _summarize_update("synthesis", update)
+        assert "500 chars" in result
+
+    def test_unknown_node(self) -> None:
+        """Unknown node gets generic summary."""
+        result = _summarize_update("unknown_node", {})
+        assert "Completed unknown_node" in result
+
+
+class TestStreamResearch:
+    """Tests for stream_research() async generator."""
+
+    @pytest.mark.asyncio
+    async def test_yields_node_events(self, e2e_config: AgentConfig, mock_mcp: AsyncMock) -> None:
+        """Stream yields node_end events for each pipeline node."""
+        planner_output = PlannerOutput(
+            sub_tasks=[
+                SubTask(
+                    description="Find DML papers",
+                    search_queries=["double machine learning"],
+                    concepts_to_explore=["double machine learning"],
+                    methods_to_audit=["DML"],
+                )
+            ],
+            rationale="Decomposing DML query.",
+        )
+
+        synthesis_output = SynthesisReport(
+            executive_summary="DML provides a framework.",
+            key_findings=["DML uses cross-fitting"],
+            concept_map="DML -> cross-fitting",
+            citation_landscape="Chernozhukov et al.",
+            methodological_considerations="Overlap is critical.",
+            gaps_limitations="Limited coverage.",
+            confidence_level="medium",
+            confidence_reasoning="Good coverage.",
+        )
+
+        with (
+            patch("research_agent.nodes.query_planner.ChatAnthropic") as mock_planner_cls,
+            patch("research_agent.nodes.synthesis.ChatAnthropic") as mock_synth_cls,
+            patch("research_agent.mcp_client.ResearchKBClient.__aenter__", return_value=mock_mcp),
+            patch("research_agent.mcp_client.ResearchKBClient.__aexit__", return_value=None),
+        ):
+            mock_planner = AsyncMock()
+            mock_planner.ainvoke.return_value = planner_output
+            mock_planner_cls.return_value.with_structured_output.return_value = mock_planner
+
+            mock_synth = AsyncMock()
+            mock_synth.ainvoke.return_value = synthesis_output
+            mock_synth_cls.return_value.with_structured_output.return_value = mock_synth
+
+            events: list[StreamEvent] = []
+            async for event in stream_research("DML assumptions", e2e_config):
+                events.append(event)
+
+        # Verify node_end events for all pipeline nodes
+        node_end_events = [e for e in events if e.event_type == "node_end"]
+        node_names = [e.node_name for e in node_end_events]
+        assert "query_planner" in node_names
+        assert "literature_search" in node_names
+        assert "concept_explorer" in node_names
+        assert "citation_analyzer" in node_names
+        assert "synthesis" in node_names
+        # With DML methods, assumption_auditor should also fire
+        assert "assumption_auditor" in node_names
+
+    @pytest.mark.asyncio
+    async def test_yields_report_chunk(self, e2e_config: AgentConfig, mock_mcp: AsyncMock) -> None:
+        """Stream yields report_chunk event with report content."""
+        planner_output = PlannerOutput(
+            sub_tasks=[
+                SubTask(
+                    description="Find DML papers",
+                    search_queries=["DML"],
+                    concepts_to_explore=["DML"],
+                    methods_to_audit=["DML"],
+                )
+            ],
+            rationale="Test.",
+        )
+
+        synthesis_output = SynthesisReport(
+            executive_summary="Test report content.",
+            key_findings=["Finding 1"],
+            concept_map="A -> B",
+            citation_landscape="Cite.",
+            methodological_considerations="Method.",
+            gaps_limitations="Gap.",
+            confidence_level="low",
+            confidence_reasoning="Test.",
+        )
+
+        with (
+            patch("research_agent.nodes.query_planner.ChatAnthropic") as mock_planner_cls,
+            patch("research_agent.nodes.synthesis.ChatAnthropic") as mock_synth_cls,
+            patch("research_agent.mcp_client.ResearchKBClient.__aenter__", return_value=mock_mcp),
+            patch("research_agent.mcp_client.ResearchKBClient.__aexit__", return_value=None),
+        ):
+            mock_planner = AsyncMock()
+            mock_planner.ainvoke.return_value = planner_output
+            mock_planner_cls.return_value.with_structured_output.return_value = mock_planner
+
+            mock_synth = AsyncMock()
+            mock_synth.ainvoke.return_value = synthesis_output
+            mock_synth_cls.return_value.with_structured_output.return_value = mock_synth
+
+            events: list[StreamEvent] = []
+            async for event in stream_research("DML", e2e_config):
+                events.append(event)
+
+        report_events = [e for e in events if e.event_type == "report_chunk"]
+        assert len(report_events) == 1
+        assert len(report_events[0].data) > 0
+
+    @pytest.mark.asyncio
+    async def test_yields_complete_event(
+        self, e2e_config: AgentConfig, mock_mcp: AsyncMock
+    ) -> None:
+        """Stream yields terminal complete event."""
+        planner_output = PlannerOutput(
+            sub_tasks=[
+                SubTask(
+                    description="Find papers",
+                    search_queries=["test"],
+                    concepts_to_explore=["test"],
+                    methods_to_audit=[],
+                )
+            ],
+            rationale="Test.",
+        )
+
+        synthesis_output = SynthesisReport(
+            executive_summary="Summary.",
+            key_findings=["F"],
+            concept_map="A",
+            citation_landscape="C",
+            methodological_considerations="M",
+            gaps_limitations="G",
+            confidence_level="low",
+            confidence_reasoning="Low.",
+        )
+
+        with (
+            patch("research_agent.nodes.query_planner.ChatAnthropic") as mock_planner_cls,
+            patch("research_agent.nodes.synthesis.ChatAnthropic") as mock_synth_cls,
+            patch("research_agent.mcp_client.ResearchKBClient.__aenter__", return_value=mock_mcp),
+            patch("research_agent.mcp_client.ResearchKBClient.__aexit__", return_value=None),
+        ):
+            mock_planner = AsyncMock()
+            mock_planner.ainvoke.return_value = planner_output
+            mock_planner_cls.return_value.with_structured_output.return_value = mock_planner
+
+            mock_synth = AsyncMock()
+            mock_synth.ainvoke.return_value = synthesis_output
+            mock_synth_cls.return_value.with_structured_output.return_value = mock_synth
+
+            events: list[StreamEvent] = []
+            async for event in stream_research("test", e2e_config):
+                events.append(event)
+
+        # Last event should be complete
+        assert events[-1].event_type == "complete"
+        assert "chars" in events[-1].data

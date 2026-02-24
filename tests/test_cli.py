@@ -54,6 +54,16 @@ class TestCLIArgParsing:
         )
         assert "--output" in result.stdout or "-o" in result.stdout
 
+    def test_stream_flag_accepted(self) -> None:
+        """--stream is a recognized flag."""
+        result = subprocess.run(
+            [sys.executable, "-m", "research_agent.cli", "--help"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        assert "--stream" in result.stdout or "-s" in result.stdout
+
 
 class TestCLIErrorHandling:
     """Test error handling paths."""
