@@ -1,4 +1,4 @@
-# Research Agent: Interview-Ready Best Practices Upgrade
+# Research Agent: Best Practices Upgrade
 
 **Created**: 2026-02-24
 **Status**: implemented
