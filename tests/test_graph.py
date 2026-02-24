@@ -10,12 +10,14 @@ Validates that:
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from research_agent.config import AgentConfig, MCPConfig, ModelConfig
 from research_agent.graph import _should_audit_assumptions, build_graph
+from research_agent.nodes.query_planner import PlannerOutput
+from research_agent.nodes.synthesis import SynthesisReport
 from research_agent.state import ResearchState, SubTask
 
 
@@ -68,32 +70,43 @@ class TestEndToEnd:
         self, e2e_config: AgentConfig, mock_mcp: AsyncMock
     ) -> None:
         """Full pipeline including assumption auditor."""
-        # Mock LLM responses for query_planner and synthesis
-        mock_llm_response = MagicMock()
-        mock_llm_response.content = """[
-            {
-                "description": "Find DML papers",
-                "search_queries": ["double machine learning"],
-                "concepts_to_explore": ["double machine learning"],
-                "methods_to_audit": ["DML"]
-            }
-        ]"""
+        # Structured output models — with_structured_output returns these directly
+        planner_output = PlannerOutput(
+            sub_tasks=[
+                SubTask(
+                    description="Find DML papers",
+                    search_queries=["double machine learning"],
+                    concepts_to_explore=["double machine learning"],
+                    methods_to_audit=["DML"],
+                )
+            ],
+            rationale="Decomposing DML query into foundational search.",
+        )
 
-        mock_synthesis_response = MagicMock()
-        mock_synthesis_response.content = "# Research Report\n\nThis is the synthesis."
+        synthesis_output = SynthesisReport(
+            executive_summary="DML provides a framework for causal inference.",
+            key_findings=["DML uses cross-fitting", "Requires unconfoundedness"],
+            concept_map="DML -> cross-fitting -> unconfoundedness",
+            citation_landscape="Chernozhukov et al. (2018) is foundational.",
+            methodological_considerations="Overlap assumption is critical.",
+            gaps_limitations="Limited coverage of finite-sample properties.",
+            confidence_level="medium",
+            confidence_reasoning="Good coverage of core concepts, some gaps.",
+        )
 
-        with patch("research_agent.nodes.query_planner.ChatAnthropic") as mock_planner_cls, \
-             patch("research_agent.nodes.synthesis.ChatAnthropic") as mock_synth_cls:
-
-            # Setup planner mock
+        with (
+            patch("research_agent.nodes.query_planner.ChatAnthropic") as mock_planner_cls,
+            patch("research_agent.nodes.synthesis.ChatAnthropic") as mock_synth_cls,
+        ):
+            # Setup planner mock — with_structured_output returns model directly
             mock_planner = AsyncMock()
-            mock_planner.ainvoke.return_value = mock_llm_response
-            mock_planner_cls.return_value = mock_planner
+            mock_planner.ainvoke.return_value = planner_output
+            mock_planner_cls.return_value.with_structured_output.return_value = mock_planner
 
             # Setup synthesis mock
             mock_synth = AsyncMock()
-            mock_synth.ainvoke.return_value = mock_synthesis_response
-            mock_synth_cls.return_value = mock_synth
+            mock_synth.ainvoke.return_value = synthesis_output
+            mock_synth_cls.return_value.with_structured_output.return_value = mock_synth
 
             graph = build_graph(e2e_config, mock_mcp)
             initial = ResearchState(
@@ -116,29 +129,40 @@ class TestEndToEnd:
         self, e2e_config: AgentConfig, mock_mcp: AsyncMock
     ) -> None:
         """Pipeline skips assumption auditor when no methods identified."""
-        mock_llm_response = MagicMock()
-        mock_llm_response.content = """[
-            {
-                "description": "Explore RAG architectures",
-                "search_queries": ["RAG retrieval augmented generation"],
-                "concepts_to_explore": ["retrieval augmented generation"],
-                "methods_to_audit": []
-            }
-        ]"""
+        planner_output = PlannerOutput(
+            sub_tasks=[
+                SubTask(
+                    description="Explore RAG architectures",
+                    search_queries=["RAG retrieval augmented generation"],
+                    concepts_to_explore=["retrieval augmented generation"],
+                    methods_to_audit=[],
+                )
+            ],
+            rationale="RAG-focused query, no statistical methods.",
+        )
 
-        mock_synthesis_response = MagicMock()
-        mock_synthesis_response.content = "# RAG Report\n\nFindings about RAG."
+        synthesis_output = SynthesisReport(
+            executive_summary="RAG combines retrieval with generation.",
+            key_findings=["Dense retrieval outperforms sparse"],
+            concept_map="RAG -> retrieval -> generation",
+            citation_landscape="Lewis et al. (2020) introduced RAG.",
+            methodological_considerations="Chunk size affects quality.",
+            gaps_limitations="Limited coverage in this KB.",
+            confidence_level="low",
+            confidence_reasoning="Few sources available on RAG.",
+        )
 
-        with patch("research_agent.nodes.query_planner.ChatAnthropic") as mock_planner_cls, \
-             patch("research_agent.nodes.synthesis.ChatAnthropic") as mock_synth_cls:
-
+        with (
+            patch("research_agent.nodes.query_planner.ChatAnthropic") as mock_planner_cls,
+            patch("research_agent.nodes.synthesis.ChatAnthropic") as mock_synth_cls,
+        ):
             mock_planner = AsyncMock()
-            mock_planner.ainvoke.return_value = mock_llm_response
-            mock_planner_cls.return_value = mock_planner
+            mock_planner.ainvoke.return_value = planner_output
+            mock_planner_cls.return_value.with_structured_output.return_value = mock_planner
 
             mock_synth = AsyncMock()
-            mock_synth.ainvoke.return_value = mock_synthesis_response
-            mock_synth_cls.return_value = mock_synth
+            mock_synth.ainvoke.return_value = synthesis_output
+            mock_synth_cls.return_value.with_structured_output.return_value = mock_synth
 
             graph = build_graph(e2e_config, mock_mcp)
             result = await graph.ainvoke(ResearchState(query="How does RAG work?"))
@@ -148,8 +172,8 @@ class TestEndToEnd:
         assert result["report"] is not None
 
 
-class TestStateDataclasses:
-    """Test state dataclass defaults and creation."""
+class TestStateModels:
+    """Test state Pydantic model defaults and creation."""
 
     def test_default_state_creation(self) -> None:
         """ResearchState can be created with minimal args."""

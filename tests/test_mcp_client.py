@@ -1,12 +1,15 @@
 """Tests for MCP client wrapper.
 
-Tests the ResearchKBClient interface — validates method signatures,
+Tests the ResearchKBClient interface -- validates method signatures,
 error handling, and argument forwarding.
 """
 
 from __future__ import annotations
 
+import asyncio
+
 import pytest
+from pydantic import ValidationError
 
 from research_agent.config import MCPConfig
 from research_agent.mcp_client import ResearchKBClient
@@ -20,26 +23,18 @@ class TestMCPClientConfig:
         config = MCPConfig(transport="stdio", research_kb_path="")
         client = ResearchKBClient(config)
         with pytest.raises(ValueError, match="RESEARCH_KB_PATH must be set"):
-            import asyncio
-
             asyncio.run(client.__aenter__())
 
     def test_rejects_unsupported_transport(self) -> None:
-        """Unknown transport raises ValueError."""
-        config = MCPConfig(transport="grpc", research_kb_path="/some/path")
-        client = ResearchKBClient(config)
-        with pytest.raises(ValueError, match="Unsupported transport"):
-            import asyncio
-
-            asyncio.run(client.__aenter__())
+        """Unknown transport rejected at construction via Literal validation."""
+        with pytest.raises(ValidationError):
+            MCPConfig(transport="grpc", research_kb_path="/some/path")
 
     def test_not_connected_raises_runtime_error(self) -> None:
         """Calling tools without connecting raises RuntimeError."""
         config = MCPConfig(transport="stdio", research_kb_path="/fake")
         client = ResearchKBClient(config)
         with pytest.raises(RuntimeError, match="Not connected"):
-            import asyncio
-
             asyncio.run(client.search("test query"))
 
 

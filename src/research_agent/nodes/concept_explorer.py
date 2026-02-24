@@ -1,4 +1,4 @@
-"""Concept Explorer node — traverses the knowledge graph.
+"""Concept Explorer node -- traverses the knowledge graph.
 
 For each concept identified by the planner, retrieves concept details
 and explores the graph neighborhood to discover related concepts.
@@ -9,11 +9,10 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Any
 
 from research_agent.config import AgentConfig
 from research_agent.mcp_client import ResearchKBClient
-from research_agent.state import ConceptInfo, ResearchState
+from research_agent.state import ConceptInfo, NodeUpdate, ResearchState
 
 logger = logging.getLogger(__name__)
 
@@ -21,12 +20,27 @@ logger = logging.getLogger(__name__)
 def _parse_concept_detail(markdown: str) -> ConceptInfo | None:
     """Parse a concept detail response into ConceptInfo.
 
+    Expected format from research-kb::
+
+        ## Concept Name
+        **Type:** METHOD
+        **ID:** `concept-xyz-001`
+
+        ### Description
+        A framework for...
+
+        ### Relationships (N total)
+        - REQUIRES -> `concept-abc-001`
+
     Args:
         markdown: Raw markdown from research_kb_get_concept.
 
     Returns:
         ConceptInfo or None if parsing fails.
     """
+    if not markdown or not markdown.strip():
+        return None
+
     concept_id = ""
     name = ""
     concept_type = ""
@@ -65,20 +79,24 @@ def _parse_concept_detail(markdown: str) -> ConceptInfo | None:
     if not concept_id and not name:
         return None
 
-    return ConceptInfo(
-        concept_id=concept_id,
-        name=name,
-        concept_type=concept_type,
-        description=description,
-        relationships=relationships,
-    )
+    try:
+        return ConceptInfo(
+            concept_id=concept_id,
+            name=name,
+            concept_type=concept_type,
+            description=description,
+            relationships=relationships,
+        )
+    except Exception as e:
+        logger.warning("Failed to construct ConceptInfo for '%s': %s", name, e)
+        return None
 
 
 async def concept_explorer(
     state: ResearchState,
     config: AgentConfig,
     mcp: ResearchKBClient,
-) -> dict[str, Any]:
+) -> NodeUpdate:
     """Explore concepts in the knowledge graph.
 
     Strategy:
@@ -92,7 +110,7 @@ async def concept_explorer(
         mcp: Connected MCP client.
 
     Returns:
-        Dict with 'concepts' and 'concept_map_summary' updates.
+        NodeUpdate with ``concepts`` and ``concept_map_summary``.
     """
     logger.info("Exploring knowledge graph concepts")
 
@@ -155,8 +173,8 @@ async def concept_explorer(
     summary = f"Explored {len(unique_names)} concepts, found {len(concepts)} total entries."
     logger.info(summary)
 
-    return {
-        "concepts": concepts,
-        "concept_map_summary": summary,
-        "current_node": "concept_explorer",
-    }
+    return NodeUpdate(
+        concepts=concepts,
+        concept_map_summary=summary,
+        current_node="concept_explorer",
+    )

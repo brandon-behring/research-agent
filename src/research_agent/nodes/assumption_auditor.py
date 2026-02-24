@@ -1,4 +1,4 @@
-"""Assumption Auditor node — audits statistical method assumptions.
+"""Assumption Auditor node -- audits statistical method assumptions.
 
 For each method identified by the planner, calls research-kb's assumption
 auditing tool to get formal statements, violation consequences, and
@@ -9,11 +9,10 @@ identification depends on assumptions.
 from __future__ import annotations
 
 import logging
-from typing import Any
 
 from research_agent.config import AgentConfig
 from research_agent.mcp_client import ResearchKBClient
-from research_agent.state import AssumptionAudit, ResearchState
+from research_agent.state import AssumptionAudit, NodeUpdate, ResearchState
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +21,7 @@ async def assumption_auditor(
     state: ResearchState,
     config: AgentConfig,
     mcp: ResearchKBClient,
-) -> dict[str, Any]:
+) -> NodeUpdate:
     """Audit assumptions for all methods identified by the planner.
 
     Args:
@@ -31,7 +30,7 @@ async def assumption_auditor(
         mcp: Connected MCP client.
 
     Returns:
-        Dict with 'assumption_audits' and 'assumption_summary' updates.
+        NodeUpdate with ``assumption_audits`` and ``assumption_summary``.
     """
     logger.info("Starting assumption audits")
 
@@ -60,10 +59,12 @@ async def assumption_auditor(
 
             except Exception as e:
                 logger.warning("Assumption audit failed for '%s': %s", method, e)
-                audits.append(AssumptionAudit(
-                    method_name=method,
-                    raw_output=f"Audit failed: {e}",
-                ))
+                audits.append(
+                    AssumptionAudit(
+                        method_name=method,
+                        raw_output=f"Audit failed: {e}",
+                    )
+                )
 
     if not audits:
         summary = "No statistical methods identified for assumption auditing."
@@ -72,8 +73,8 @@ async def assumption_auditor(
 
     logger.info(summary)
 
-    return {
-        "assumption_audits": audits,
-        "assumption_summary": summary,
-        "current_node": "assumption_auditor",
-    }
+    return NodeUpdate(
+        assumption_audits=audits,
+        assumption_summary=summary,
+        current_node="assumption_auditor",
+    )

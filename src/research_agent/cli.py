@@ -2,7 +2,7 @@
 
 Usage:
     research-agent "What are the assumptions of double machine learning?"
-    research-agent --model sonnet "Compare DML and instrumental variables"
+    research-agent --verbose -o report.md "Compare DML and IV"
 """
 
 from __future__ import annotations
@@ -26,12 +26,14 @@ def main() -> None:
         help="Research question to analyze",
     )
     parser.add_argument(
-        "--verbose", "-v",
+        "--verbose",
+        "-v",
         action="store_true",
         help="Enable debug logging",
     )
     parser.add_argument(
-        "--output", "-o",
+        "--output",
+        "-o",
         help="Write report to file (default: stdout)",
     )
 
@@ -45,7 +47,7 @@ def main() -> None:
         stream=sys.stderr,
     )
 
-    config = AgentConfig.from_env()
+    config = AgentConfig()
     result = asyncio.run(run_research(args.query, config))
 
     report = result.get("report", "No report generated.")

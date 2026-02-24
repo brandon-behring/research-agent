@@ -104,11 +104,11 @@ A framework for estimating treatment effects that uses cross-fitting
 to avoid overfitting bias in nuisance parameter estimation.
 
 ### Relationships (5 total)
-- REQUIRES → `concept-unconf-001`
-- REQUIRES → `concept-overlap-001`
-- USES → `concept-crossfit-001`
-- ADDRESSES → `concept-regbias-001`
-- RELATED_TO → `concept-iv-001`
+- REQUIRES \u2192 `concept-unconf-001`
+- REQUIRES \u2192 `concept-overlap-001`
+- USES \u2192 `concept-crossfit-001`
+- ADDRESSES \u2192 `concept-regbias-001`
+- RELATED_TO \u2192 `concept-iv-001`
 """
 
     client.graph_neighborhood.return_value = """## Graph Neighborhood: double machine learning
@@ -196,7 +196,7 @@ to avoid overfitting bias in nuisance parameter estimation.
 #### Critical (identification fails if violated)
 
 **1. Unconfoundedness** [CRITICAL]
-   - **Formal**: `Y(t) ⊥ T | X`
+   - **Formal**: `Y(t) \u22a5 T | X`
    - **Plain English**: All confounders are observed and included in X.
    - **If violated**: Treatment effect estimates are biased.
    - **Verify**: Sensitivity analysis, placebo tests
@@ -216,9 +216,9 @@ to avoid overfitting bias in nuisance parameter estimation.
 #### Standard
 
 **3. Neyman Orthogonality** [STANDARD]
-   - **Formal**: `∂θ E[ψ(W; θ₀, η₀)] = 0`
+   - **Formal**: `\u2202\u03b8 E[\u03c8(W; \u03b8\u2080, \u03b7\u2080)] = 0`
    - **Plain English**: Score function is insensitive to nuisance estimation error.
-   - **If violated**: √n convergence may not hold.
+   - **If violated**: \u221an convergence may not hold.
    - **Verify**: Verify moment condition structure
    - **Citation**: Chernozhukov et al. (2018), Definition 2.1
    - **Concept ID**: `concept-neyman-001`

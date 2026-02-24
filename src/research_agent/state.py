@@ -1,99 +1,145 @@
 """State schema for the research analysis graph.
 
-Uses TypedDict (LangGraph convention) with Annotated reducers for list fields.
+Pydantic v2 models with frozen immutability for sub-models.
+ResearchState is mutable (LangGraph reconstructs via ``schema(**dict)``).
 Each node returns a partial dict — LangGraph merges updates into state automatically.
 """
 
-from dataclasses import dataclass, field
-from typing import Any
+from __future__ import annotations
+
+from typing import Any, TypedDict
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+# ── Immutable sub-models ─────────────────────────────────────────────
 
 
-@dataclass
-class SubTask:
+class SubTask(BaseModel):
     """A decomposed research sub-task from the query planner."""
 
-    description: str
-    search_queries: list[str] = field(default_factory=list)
-    concepts_to_explore: list[str] = field(default_factory=list)
-    methods_to_audit: list[str] = field(default_factory=list)
+    model_config = ConfigDict(frozen=True)
+
+    description: str = Field(description="What to investigate")
+    search_queries: list[str] = Field(
+        default_factory=list,
+        description="1-3 specific search queries for the knowledge base",
+    )
+    concepts_to_explore: list[str] = Field(
+        default_factory=list,
+        description="Key concepts to look up in the knowledge graph",
+    )
+    methods_to_audit: list[str] = Field(
+        default_factory=list,
+        description="Statistical methods whose assumptions should be checked",
+    )
+
+    @field_validator("search_queries", mode="before")
+    @classmethod
+    def strip_empty_queries(cls, v: list[str]) -> list[str]:
+        """Remove empty or whitespace-only search queries."""
+        return [q.strip() for q in v if q and q.strip()]
 
 
-@dataclass
-class SearchResult:
+class SearchResult(BaseModel):
     """A single search result from research-kb."""
 
-    title: str
-    content: str
-    source_id: str
-    score: float
-    authors: str = ""
-    year: str = ""
-    chunk_id: str = ""
+    model_config = ConfigDict(frozen=True)
+
+    title: str = Field(description="Document title")
+    content: str = Field(description="Matched content snippet")
+    source_id: str = Field(description="Unique source identifier")
+    score: float = Field(ge=0.0, le=1.0, description="Relevance score [0, 1]")
+    authors: str = Field(default="", description="Author attribution line")
+    year: str = Field(default="", description="Publication year")
+    chunk_id: str = Field(default="", description="Chunk-level identifier")
 
 
-@dataclass
-class ConceptInfo:
+class ConceptInfo(BaseModel):
     """A concept from the knowledge graph."""
 
-    concept_id: str
-    name: str
-    concept_type: str = ""
-    description: str = ""
-    relationships: list[dict[str, str]] = field(default_factory=list)
-    neighborhood_summary: str = ""
+    model_config = ConfigDict(frozen=True)
+
+    concept_id: str = Field(description="UUID of the concept")
+    name: str = Field(description="Human-readable concept name")
+    concept_type: str = Field(default="", description="E.g., METHOD, ASSUMPTION, THEOREM")
+    description: str = Field(default="", description="Concept description")
+    relationships: list[dict[str, str]] = Field(
+        default_factory=list,
+        description="Edges: type + target_id",
+    )
+    neighborhood_summary: str = Field(
+        default="",
+        description="Graph neighborhood markdown from research-kb",
+    )
 
 
-@dataclass
-class CitationInfo:
+class CitationInfo(BaseModel):
     """Citation network information for a source."""
 
-    source_id: str
-    source_title: str
-    citing: list[dict[str, str]] = field(default_factory=list)
-    cited_by: list[dict[str, str]] = field(default_factory=list)
-    similar_papers: list[dict[str, Any]] = field(default_factory=list)
+    model_config = ConfigDict(frozen=True)
+
+    source_id: str = Field(description="UUID of the analyzed source")
+    source_title: str = Field(description="Title of the analyzed source")
+    citing: list[dict[str, str]] = Field(
+        default_factory=list,
+        description="Papers that cite this source",
+    )
+    cited_by: list[dict[str, str]] = Field(
+        default_factory=list,
+        description="Papers cited by this source",
+    )
+    similar_papers: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description="Bibliographically similar papers",
+    )
 
 
-@dataclass
-class AssumptionAudit:
+class AssumptionAudit(BaseModel):
     """Assumption audit result for a statistical method."""
 
-    method_name: str
-    assumptions: list[dict[str, Any]] = field(default_factory=list)
-    raw_output: str = ""
+    model_config = ConfigDict(frozen=True)
+
+    method_name: str = Field(description="Statistical method name")
+    assumptions: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description="Structured assumption details",
+    )
+    raw_output: str = Field(default="", description="Raw markdown from research-kb")
 
 
-@dataclass
-class ResearchState:
+# ── Mutable graph state ──────────────────────────────────────────────
+
+
+class ResearchState(BaseModel):
     """Complete state flowing through the research analysis graph.
 
     Design:
-        - All fields have defaults → graph can start at any node for testing
-        - Immutable update pattern → each node returns dict of changes
+        - All fields have defaults -> graph can start at any node for testing
+        - Mutable (no frozen) because LangGraph reconstructs via schema(**dict)
         - Typed for IDE support and validation
     """
 
     # --- Input ---
-    query: str = ""
+    query: str = Field(default="", description="Original research question")
 
     # --- Query Planner output ---
-    sub_tasks: list[SubTask] = field(default_factory=list)
+    sub_tasks: list[SubTask] = Field(default_factory=list)
     planning_rationale: str = ""
 
     # --- Literature Search output ---
-    search_results: list[SearchResult] = field(default_factory=list)
+    search_results: list[SearchResult] = Field(default_factory=list)
     search_summary: str = ""
 
     # --- Concept Explorer output ---
-    concepts: list[ConceptInfo] = field(default_factory=list)
+    concepts: list[ConceptInfo] = Field(default_factory=list)
     concept_map_summary: str = ""
 
     # --- Citation Analyzer output ---
-    citations: list[CitationInfo] = field(default_factory=list)
+    citations: list[CitationInfo] = Field(default_factory=list)
     citation_summary: str = ""
 
     # --- Assumption Auditor output ---
-    assumption_audits: list[AssumptionAudit] = field(default_factory=list)
+    assumption_audits: list[AssumptionAudit] = Field(default_factory=list)
     assumption_summary: str = ""
 
     # --- Synthesis output ---
@@ -101,5 +147,27 @@ class ResearchState:
     confidence_assessment: str = ""
 
     # --- Metadata ---
-    errors: list[str] = field(default_factory=list)
+    errors: list[str] = Field(default_factory=list)
     current_node: str = ""
+
+
+# ── Typed node return ────────────────────────────────────────────────
+
+
+class NodeUpdate(TypedDict, total=False):
+    """Typed dict for node return values. All fields optional (partial updates)."""
+
+    sub_tasks: list[SubTask]
+    planning_rationale: str
+    search_results: list[SearchResult]
+    search_summary: str
+    concepts: list[ConceptInfo]
+    concept_map_summary: str
+    citations: list[CitationInfo]
+    citation_summary: str
+    assumption_audits: list[AssumptionAudit]
+    assumption_summary: str
+    report: str
+    confidence_assessment: str
+    errors: list[str]
+    current_node: str

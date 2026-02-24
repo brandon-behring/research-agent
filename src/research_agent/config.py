@@ -1,31 +1,49 @@
 """Configuration for model selection and MCP endpoints.
 
+Uses pydantic-settings BaseSettings for automatic environment variable loading.
+Explicit constructor overrides still work for tests: ``AgentConfig(max_search_results=5)``.
+
 Design decisions:
-    - Haiku for planning (fast, cheap — routing doesn't need Opus)
+    - Haiku for planning (fast, cheap -- routing doesn't need Opus)
     - Sonnet for synthesis (strong reasoning for final report)
     - MCP endpoint configurable via env vars for Docker flexibility
 """
 
-import os
-from dataclasses import dataclass
+from __future__ import annotations
+
+from typing import Literal
+
+from pydantic import Field
+from pydantic_settings import BaseSettings
 
 
-@dataclass(frozen=True)
-class ModelConfig:
+class ModelConfig(BaseSettings):
     """LLM model selection per node type.
 
     Rationale: Cost/latency optimization. Planning nodes need speed,
-    synthesis needs reasoning depth. This mirrors production patterns
-    where you don't call the most expensive model for every step.
+    synthesis needs reasoning depth.
     """
 
-    planning: str = "claude-haiku-4-5-20251001"
-    synthesis: str = "claude-sonnet-4-6"
-    analysis: str = "claude-sonnet-4-6"
+    planning: str = Field(
+        default="claude-haiku-4-5-20251001",
+        alias="PLANNING_MODEL",
+        description="Model for query decomposition (fast, cheap)",
+    )
+    synthesis: str = Field(
+        default="claude-sonnet-4-6",
+        alias="SYNTHESIS_MODEL",
+        description="Model for report synthesis (strong reasoning)",
+    )
+    analysis: str = Field(
+        default="claude-sonnet-4-6",
+        alias="ANALYSIS_MODEL",
+        description="Model for analysis nodes",
+    )
+
+    model_config = {"frozen": True, "populate_by_name": True}
 
 
-@dataclass(frozen=True)
-class MCPConfig:
+class MCPConfig(BaseSettings):
     """Research-KB MCP server connection configuration.
 
     Supports two transports:
@@ -33,42 +51,54 @@ class MCPConfig:
         - http: connect to running research-kb service (Docker)
     """
 
-    transport: str = "stdio"
-    research_kb_path: str = ""
-    http_url: str = "http://research-kb:8000"
+    transport: Literal["stdio", "http"] = Field(
+        default="stdio",
+        alias="MCP_TRANSPORT",
+        description="MCP transport protocol",
+    )
+    research_kb_path: str = Field(
+        default="",
+        alias="RESEARCH_KB_PATH",
+        description="Path to research-kb repo root (stdio mode)",
+    )
+    http_url: str = Field(
+        default="http://research-kb:8000",
+        alias="RESEARCH_KB_URL",
+        description="HTTP endpoint for research-kb (Docker mode)",
+    )
 
-    @classmethod
-    def from_env(cls) -> "MCPConfig":
-        """Load configuration from environment variables."""
-        transport = os.environ.get("MCP_TRANSPORT", "stdio")
-        return cls(
-            transport=transport,
-            research_kb_path=os.environ.get("RESEARCH_KB_PATH", ""),
-            http_url=os.environ.get("RESEARCH_KB_URL", "http://research-kb:8000"),
-        )
+    model_config = {"frozen": True, "populate_by_name": True}
 
 
-@dataclass(frozen=True)
-class AgentConfig:
-    """Top-level agent configuration."""
+class AgentConfig(BaseSettings):
+    """Top-level agent configuration.
 
-    models: ModelConfig = ModelConfig()
-    mcp: MCPConfig = MCPConfig()
-    max_search_results: int = 10
-    max_concepts: int = 15
-    max_citations: int = 20
+    All fields load from environment variables automatically.
+    Explicit overrides in constructor take precedence (for tests).
+    """
 
-    @classmethod
-    def from_env(cls) -> "AgentConfig":
-        """Load full configuration from environment."""
-        return cls(
-            models=ModelConfig(
-                planning=os.environ.get("PLANNING_MODEL", "claude-haiku-4-5-20251001"),
-                synthesis=os.environ.get("SYNTHESIS_MODEL", "claude-sonnet-4-6"),
-                analysis=os.environ.get("ANALYSIS_MODEL", "claude-sonnet-4-6"),
-            ),
-            mcp=MCPConfig.from_env(),
-            max_search_results=int(os.environ.get("MAX_SEARCH_RESULTS", "10")),
-            max_concepts=int(os.environ.get("MAX_CONCEPTS", "15")),
-            max_citations=int(os.environ.get("MAX_CITATIONS", "20")),
-        )
+    models: ModelConfig = Field(default_factory=ModelConfig)
+    mcp: MCPConfig = Field(default_factory=MCPConfig)
+    max_search_results: int = Field(
+        default=10,
+        ge=1,
+        le=50,
+        alias="MAX_SEARCH_RESULTS",
+        description="Maximum results per search query",
+    )
+    max_concepts: int = Field(
+        default=15,
+        ge=1,
+        le=50,
+        alias="MAX_CONCEPTS",
+        description="Maximum concepts to explore",
+    )
+    max_citations: int = Field(
+        default=20,
+        ge=1,
+        le=50,
+        alias="MAX_CITATIONS",
+        description="Maximum citation chains per source",
+    )
+
+    model_config = {"frozen": True, "populate_by_name": True}

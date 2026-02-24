@@ -1,4 +1,4 @@
-"""Citation Analyzer node — maps citation networks and finds related papers.
+"""Citation Analyzer node -- maps citation networks and finds related papers.
 
 Takes source IDs from search results, builds citation chains (who cites whom),
 and discovers related papers through bibliographic coupling (shared references).
@@ -12,7 +12,7 @@ from typing import Any
 
 from research_agent.config import AgentConfig
 from research_agent.mcp_client import ResearchKBClient
-from research_agent.state import CitationInfo, ResearchState
+from research_agent.state import CitationInfo, NodeUpdate, ResearchState
 
 logger = logging.getLogger(__name__)
 
@@ -20,12 +20,25 @@ logger = logging.getLogger(__name__)
 def _parse_citation_network(markdown: str) -> tuple[list[dict[str, str]], list[dict[str, str]]]:
     """Parse citation network markdown into citing/cited-by lists.
 
+    Expected format::
+
+        ### Citing This Source (N)
+        - **Title** (2021)
+          - Author
+          - ID: `src-xxx`
+
+        ### Cited By This Source (N)
+        ...
+
     Args:
         markdown: Raw markdown from research_kb_citation_network.
 
     Returns:
         Tuple of (citing_sources, cited_by_sources).
     """
+    if not markdown or not markdown.strip():
+        return [], []
+
     citing: list[dict[str, str]] = []
     cited_by: list[dict[str, str]] = []
 
@@ -54,12 +67,22 @@ def _parse_citation_network(markdown: str) -> tuple[list[dict[str, str]], list[d
 def _parse_biblio_coupling(markdown: str) -> list[dict[str, Any]]:
     """Parse bibliographic coupling markdown.
 
+    Expected format::
+
+        - **Title** (2021)
+          - Author
+          - Coupling: **45.2%** (8 shared refs)
+          - ID: `src-xxx`
+
     Args:
         markdown: Raw markdown from research_kb_biblio_coupling.
 
     Returns:
         List of similar papers with coupling scores.
     """
+    if not markdown or not markdown.strip():
+        return []
+
     papers: list[dict[str, Any]] = []
 
     for line in markdown.split("\n"):
@@ -74,7 +97,10 @@ def _parse_biblio_coupling(markdown: str) -> list[dict[str, Any]]:
                     "year": title_match.group(2),
                 }
                 if coupling_match:
-                    paper["coupling_pct"] = float(coupling_match.group(1))
+                    try:
+                        paper["coupling_pct"] = float(coupling_match.group(1))
+                    except ValueError:
+                        logger.warning("Non-numeric coupling in: %s", line)
                 if id_match:
                     paper["source_id"] = id_match.group(1)
                 papers.append(paper)
@@ -86,7 +112,7 @@ async def citation_analyzer(
     state: ResearchState,
     config: AgentConfig,
     mcp: ResearchKBClient,
-) -> dict[str, Any]:
+) -> NodeUpdate:
     """Analyze citation networks for top search results.
 
     Strategy:
@@ -100,7 +126,7 @@ async def citation_analyzer(
         mcp: Connected MCP client.
 
     Returns:
-        Dict with 'citations' and 'citation_summary' updates.
+        NodeUpdate with ``citations`` and ``citation_summary``.
     """
     logger.info("Analyzing citation networks")
 
@@ -115,7 +141,9 @@ async def citation_analyzer(
             continue
         analyzed_ids.add(result.source_id)
 
-        info = CitationInfo(source_id=result.source_id, source_title=result.title)
+        citing: list[dict[str, str]] = []
+        cited_by: list[dict[str, str]] = []
+        similar: list[dict[str, Any]] = []
 
         # Get citation network
         try:
@@ -124,8 +152,6 @@ async def citation_analyzer(
                 limit=config.max_citations,
             )
             citing, cited_by = _parse_citation_network(raw)
-            info.citing = citing
-            info.cited_by = cited_by
             logger.info(
                 "Citation network for '%s': %d citing, %d cited-by",
                 result.title[:50],
@@ -141,16 +167,24 @@ async def citation_analyzer(
                 source_id=result.source_id,
                 limit=10,
             )
-            info.similar_papers = _parse_biblio_coupling(raw)
+            similar = _parse_biblio_coupling(raw)
             logger.info(
                 "Found %d bibliographically similar papers for '%s'",
-                len(info.similar_papers),
+                len(similar),
                 result.title[:50],
             )
         except Exception as e:
             logger.warning("Biblio coupling failed for %s: %s", result.source_id, e)
 
-        citations.append(info)
+        citations.append(
+            CitationInfo(
+                source_id=result.source_id,
+                source_title=result.title,
+                citing=citing,
+                cited_by=cited_by,
+                similar_papers=similar,
+            )
+        )
 
     total_citing = sum(len(c.citing) for c in citations)
     total_cited = sum(len(c.cited_by) for c in citations)
@@ -162,8 +196,8 @@ async def citation_analyzer(
     )
     logger.info(summary)
 
-    return {
-        "citations": citations,
-        "citation_summary": summary,
-        "current_node": "citation_analyzer",
-    }
+    return NodeUpdate(
+        citations=citations,
+        citation_summary=summary,
+        current_node="citation_analyzer",
+    )

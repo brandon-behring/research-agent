@@ -1,16 +1,16 @@
-"""LangGraph StateGraph — orchestrates the multi-agent research pipeline.
+"""LangGraph StateGraph -- orchestrates the multi-agent research pipeline.
 
 Architecture:
-    Query Planner → Literature Search → Concept Explorer → Citation Analyzer
-                                                        → Assumption Auditor
-                 → Synthesis Writer
+    Query Planner -> Literature Search -> Concept Explorer -> Citation Analyzer
+                                                            -> Assumption Auditor
+                 -> Synthesis Writer
 
     The graph uses conditional edges to:
     1. Skip assumption auditing if no methods were identified
     2. Route to synthesis after all analysis nodes complete
 
 Design decisions:
-    - Dataclass state (not TypedDict) for richer type support
+    - Pydantic BaseModel state for rich validation and type support
     - Sequential main pipeline with potential parallel analysis
     - Conditional routing avoids unnecessary MCP calls
     - Config and MCP client injected via closure (not in state)
@@ -19,7 +19,6 @@ Design decisions:
 from __future__ import annotations
 
 import logging
-from typing import Any
 
 from langgraph.graph import END, StateGraph
 
@@ -31,7 +30,7 @@ from research_agent.nodes.concept_explorer import concept_explorer
 from research_agent.nodes.literature_search import literature_search
 from research_agent.nodes.query_planner import query_planner
 from research_agent.nodes.synthesis import synthesis_writer
-from research_agent.state import ResearchState
+from research_agent.state import NodeUpdate, ResearchState
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +57,7 @@ def build_graph(config: AgentConfig, mcp: ResearchKBClient) -> StateGraph:
     """Construct the research analysis graph.
 
     Nodes are wrapped in closures to inject config and MCP client.
-    This keeps the state schema clean — only research data flows through
+    This keeps the state schema clean -- only research data flows through
     the graph, not infrastructure concerns.
 
     Args:
@@ -70,22 +69,22 @@ def build_graph(config: AgentConfig, mcp: ResearchKBClient) -> StateGraph:
     """
 
     # Wrap nodes to inject dependencies
-    async def _query_planner(state: ResearchState) -> dict[str, Any]:
+    async def _query_planner(state: ResearchState) -> NodeUpdate:
         return await query_planner(state, config)
 
-    async def _literature_search(state: ResearchState) -> dict[str, Any]:
+    async def _literature_search(state: ResearchState) -> NodeUpdate:
         return await literature_search(state, config, mcp)
 
-    async def _concept_explorer(state: ResearchState) -> dict[str, Any]:
+    async def _concept_explorer(state: ResearchState) -> NodeUpdate:
         return await concept_explorer(state, config, mcp)
 
-    async def _citation_analyzer(state: ResearchState) -> dict[str, Any]:
+    async def _citation_analyzer(state: ResearchState) -> NodeUpdate:
         return await citation_analyzer(state, config, mcp)
 
-    async def _assumption_auditor(state: ResearchState) -> dict[str, Any]:
+    async def _assumption_auditor(state: ResearchState) -> NodeUpdate:
         return await assumption_auditor(state, config, mcp)
 
-    async def _synthesis_writer(state: ResearchState) -> dict[str, Any]:
+    async def _synthesis_writer(state: ResearchState) -> NodeUpdate:
         return await synthesis_writer(state, config)
 
     # Build graph
@@ -105,7 +104,7 @@ def build_graph(config: AgentConfig, mcp: ResearchKBClient) -> StateGraph:
     graph.add_edge("literature_search", "concept_explorer")
     graph.add_edge("concept_explorer", "citation_analyzer")
 
-    # Conditional: citation_analyzer → assumption_auditor OR synthesis
+    # Conditional: citation_analyzer -> assumption_auditor OR synthesis
     graph.add_conditional_edges(
         "citation_analyzer",
         _should_audit_assumptions,
@@ -120,7 +119,7 @@ def build_graph(config: AgentConfig, mcp: ResearchKBClient) -> StateGraph:
     return graph.compile()
 
 
-async def run_research(query: str, config: AgentConfig | None = None) -> ResearchState:
+async def run_research(query: str, config: AgentConfig | None = None) -> dict:
     """Execute the full research pipeline.
 
     Args:
@@ -128,10 +127,10 @@ async def run_research(query: str, config: AgentConfig | None = None) -> Researc
         config: Optional agent config (defaults to env-based).
 
     Returns:
-        Final ResearchState with report and all intermediate results.
+        Final state dict with report and all intermediate results.
     """
     if config is None:
-        config = AgentConfig.from_env()
+        config = AgentConfig()
 
     logger.info("Starting research agent for: %s", query)
 

@@ -1,4 +1,4 @@
-"""Literature Search node — executes search queries against research-kb.
+"""Literature Search node -- executes search queries against research-kb.
 
 Runs all search queries from the planner's sub-tasks, collecting results
 into a deduplicated list. Uses hybrid search (primary) with fast_search
@@ -9,11 +9,10 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Any
 
 from research_agent.config import AgentConfig
 from research_agent.mcp_client import ResearchKBClient
-from research_agent.state import ResearchState, SearchResult
+from research_agent.state import NodeUpdate, ResearchState, SearchResult
 
 logger = logging.getLogger(__name__)
 
@@ -21,12 +20,23 @@ logger = logging.getLogger(__name__)
 def _parse_search_results(markdown: str) -> list[SearchResult]:
     """Parse research-kb's markdown search output into structured results.
 
+    Expected format from research-kb::
+
+        ### 1. Title Here
+        Author et al. (2024) [Paper]
+        > Content snippet...
+        *Score: 0.892 | FTS: 0.756 | Vector: 0.891 | Graph: 0.823*
+        *Source ID: `src-001` | Chunk ID: `chk-001`*
+
     Args:
         markdown: Raw markdown from research_kb_search.
 
     Returns:
         List of SearchResult objects extracted from the markdown.
     """
+    if not markdown or not markdown.strip():
+        return []
+
     results: list[SearchResult] = []
 
     # Split on "### N." headers
@@ -49,7 +59,11 @@ def _parse_search_results(markdown: str) -> list[SearchResult]:
             if line.startswith("*Score:"):
                 score_match = re.search(r"Score:\s*([\d.]+)", line)
                 if score_match:
-                    score = float(score_match.group(1))
+                    try:
+                        raw_score = float(score_match.group(1))
+                        score = min(max(raw_score, 0.0), 1.0)
+                    except ValueError:
+                        logger.warning("Non-numeric score in line: %s", line)
             elif "Source ID:" in line:
                 id_match = re.search(r"Source ID:\s*`([^`]+)`", line)
                 if id_match:
@@ -66,15 +80,20 @@ def _parse_search_results(markdown: str) -> list[SearchResult]:
                 if year_match:
                     year = year_match.group(1)
 
-        results.append(SearchResult(
-            title=title,
-            content="\n".join(content_lines),
-            source_id=source_id,
-            score=score,
-            authors=authors,
-            year=year,
-            chunk_id=chunk_id,
-        ))
+        try:
+            results.append(
+                SearchResult(
+                    title=title,
+                    content="\n".join(content_lines),
+                    source_id=source_id,
+                    score=score,
+                    authors=authors,
+                    year=year,
+                    chunk_id=chunk_id,
+                )
+            )
+        except Exception as e:
+            logger.warning("Failed to construct SearchResult for '%s': %s", title, e)
 
     return results
 
@@ -83,7 +102,7 @@ async def literature_search(
     state: ResearchState,
     config: AgentConfig,
     mcp: ResearchKBClient,
-) -> dict[str, Any]:
+) -> NodeUpdate:
     """Execute all search queries from sub-tasks against research-kb.
 
     Args:
@@ -92,7 +111,7 @@ async def literature_search(
         mcp: Connected MCP client.
 
     Returns:
-        Dict with 'search_results' and 'search_summary' updates.
+        NodeUpdate with ``search_results`` and ``search_summary``.
     """
     logger.info("Starting literature search across %d sub-tasks", len(state.sub_tasks))
 
@@ -142,8 +161,8 @@ async def literature_search(
     )
     logger.info(summary)
 
-    return {
-        "search_results": all_results,
-        "search_summary": summary,
-        "current_node": "literature_search",
-    }
+    return NodeUpdate(
+        search_results=all_results,
+        search_summary=summary,
+        current_node="literature_search",
+    )
