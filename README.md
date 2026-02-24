@@ -75,10 +75,20 @@ cp .env.example .env
 # Edit .env with your API key and research-kb path
 ```
 
+**Environment variables:**
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ANTHROPIC_API_KEY` | *(required)* | Anthropic API key |
+| `MCP_TRANSPORT` | `stdio` | `stdio` (local) or `http` (Docker) |
+| `RESEARCH_KB_PATH` | | Path to research-kb repo (stdio mode) |
+| `RESEARCH_KB_URL` | `http://research-kb:8000` | HTTP endpoint (Docker mode) |
+| `MCP_PATH` | `/mcp` | MCP endpoint path appended to HTTP URL |
+
 ### Run
 
 ```bash
-# CLI
+# CLI (stdio transport — spawns research-kb subprocess)
 research-agent "What are the assumptions of double machine learning?"
 
 # With verbose logging
@@ -88,11 +98,12 @@ research-agent -v "Compare DML and instrumental variables"
 research-agent -o report.md "How does cross-fitting reduce bias?"
 ```
 
-### Docker
+### Docker (HTTP transport)
 
 ```bash
 docker-compose up
-# Agent available on port 8080, research-kb on port 8000
+# Agent connects to research-kb via HTTP at http://research-kb:8000/mcp
+docker-compose run agent "Query here"
 ```
 
 ## Example Queries

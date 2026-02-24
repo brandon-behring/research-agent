@@ -28,9 +28,11 @@ import json
 import logging
 from typing import Any
 
+import httpx
 from langsmith import traceable
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
+from mcp.client.streamable_http import streamable_http_client
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 from research_agent.config import MCPConfig
@@ -55,6 +57,7 @@ class ResearchKBClient:
         self._config = config
         self._session: ClientSession | None = None
         self._stdio_context: Any = None
+        self._http_context: Any = None
         self._read: Any = None
         self._write: Any = None
 
@@ -62,6 +65,8 @@ class ResearchKBClient:
         """Connect to the MCP server."""
         if self._config.transport == "stdio":
             await self._connect_stdio()
+        elif self._config.transport == "http":
+            await self._connect_http()
         else:
             raise MCPConnectionError(f"Unsupported transport: {self._config.transport}")
         return self
@@ -70,6 +75,8 @@ class ResearchKBClient:
         """Disconnect from the MCP server."""
         if self._stdio_context:
             await self._stdio_context.__aexit__(*exc)
+        if self._http_context:
+            await self._http_context.__aexit__(*exc)
 
     async def _connect_stdio(self) -> None:
         """Establish stdio connection to research-kb server.
@@ -97,6 +104,37 @@ class ResearchKBClient:
             logger.info("Connected to research-kb MCP server via stdio")
         except Exception as e:
             raise MCPConnectionError(f"Failed to connect via stdio: {e}") from e
+
+    async def _connect_http(self) -> None:
+        """Establish HTTP connection to research-kb server.
+
+        Uses the MCP streamable HTTP transport. The endpoint URL is constructed
+        from ``http_url`` + ``mcp_path`` (configurable, default ``/mcp``).
+
+        Raises:
+            MCPConnectionError: If http_url is empty or connection fails.
+        """
+        if not self._config.http_url:
+            raise MCPConnectionError(
+                "RESEARCH_KB_URL must be set for HTTP transport. "
+                "Point it to the research-kb HTTP endpoint."
+            )
+
+        url = self._config.http_url.rstrip("/") + self._config.mcp_path
+        logger.info("Connecting to research-kb MCP server at %s", url)
+
+        try:
+            self._http_context = streamable_http_client(url=url)
+            read_stream, write_stream, _ = await self._http_context.__aenter__()
+            self._read = read_stream
+            self._write = write_stream
+            self._session = ClientSession(self._read, self._write)
+            await self._session.initialize()
+            logger.info("Connected to research-kb MCP server via HTTP")
+        except (httpx.ConnectError, httpx.TimeoutException, httpx.HTTPStatusError, OSError) as e:
+            raise MCPConnectionError(f"Failed to connect via HTTP to {url}: {e}") from e
+        except Exception as e:
+            raise MCPConnectionError(f"Failed to connect via HTTP to {url}: {e}") from e
 
     @retry(
         stop=stop_after_attempt(3),

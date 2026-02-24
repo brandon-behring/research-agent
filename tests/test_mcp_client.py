@@ -7,11 +7,13 @@ error handling, and argument forwarding.
 from __future__ import annotations
 
 import asyncio
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from pydantic import ValidationError
 
 from research_agent.config import MCPConfig
+from research_agent.exceptions import MCPConnectionError
 from research_agent.mcp_client import ResearchKBClient
 
 
@@ -99,3 +101,105 @@ class TestMCPClientInterface:
         ]
         for tool in expected_tools:
             assert hasattr(client, tool), f"Missing tool method: {tool}"
+
+
+class TestHTTPTransport:
+    """Tests for HTTP transport support."""
+
+    def test_http_transport_accepted(self) -> None:
+        """MCPConfig accepts 'http' transport."""
+        config = MCPConfig(transport="http", http_url="http://localhost:8000")
+        assert config.transport == "http"
+
+    def test_connect_http_missing_url(self) -> None:
+        """Empty http_url raises MCPConnectionError."""
+        config = MCPConfig(transport="http", http_url="")
+        client = ResearchKBClient(config)
+        with pytest.raises(MCPConnectionError, match="RESEARCH_KB_URL must be set"):
+            asyncio.run(client.__aenter__())
+
+    @pytest.mark.asyncio
+    async def test_connect_http_connection_failure(self) -> None:
+        """Connection failure raises MCPConnectionError."""
+        import httpx
+
+        config = MCPConfig(transport="http", http_url="http://unreachable-host:9999")
+        client = ResearchKBClient(config)
+
+        mock_ctx = AsyncMock()
+        mock_ctx.__aenter__ = AsyncMock(side_effect=httpx.ConnectError("Connection refused"))
+        mock_ctx.__aexit__ = AsyncMock(return_value=None)
+
+        with (
+            patch("research_agent.mcp_client.streamable_http_client", return_value=mock_ctx),
+            pytest.raises(MCPConnectionError, match="Failed to connect via HTTP"),
+        ):
+            await client.__aenter__()
+
+    @pytest.mark.asyncio
+    async def test_connect_http_uses_streamable_client(self) -> None:
+        """HTTP transport uses streamable_http_client and initializes session."""
+        config = MCPConfig(
+            transport="http",
+            http_url="http://localhost:8000",
+            mcp_path="/mcp",
+        )
+        client = ResearchKBClient(config)
+
+        mock_read = MagicMock()
+        mock_write = MagicMock()
+        mock_session_id = MagicMock()
+
+        mock_ctx = AsyncMock()
+        mock_ctx.__aenter__ = AsyncMock(return_value=(mock_read, mock_write, mock_session_id))
+        mock_ctx.__aexit__ = AsyncMock(return_value=None)
+
+        with (
+            patch(
+                "research_agent.mcp_client.streamable_http_client", return_value=mock_ctx
+            ) as mock_http,
+            patch("research_agent.mcp_client.ClientSession") as mock_session_cls,
+        ):
+            mock_session = AsyncMock()
+            mock_session_cls.return_value = mock_session
+
+            await client.__aenter__()
+
+            mock_http.assert_called_once_with(url="http://localhost:8000/mcp")
+            mock_session_cls.assert_called_once_with(mock_read, mock_write)
+            mock_session.initialize.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_aexit_cleans_up_http_context(self) -> None:
+        """__aexit__ cleans up the HTTP context manager."""
+        config = MCPConfig(transport="http", http_url="http://localhost:8000")
+        client = ResearchKBClient(config)
+
+        # Simulate an established HTTP connection
+        mock_ctx = AsyncMock()
+        mock_ctx.__aexit__ = AsyncMock(return_value=None)
+        client._http_context = mock_ctx
+
+        await client.__aexit__(None, None, None)
+        mock_ctx.__aexit__.assert_awaited_once()
+
+    def test_http_url_path_construction(self) -> None:
+        """URL is constructed from http_url + mcp_path with proper slash handling."""
+        # Trailing slash on URL should be stripped
+        config = MCPConfig(
+            transport="http",
+            http_url="http://localhost:8000/",
+            mcp_path="/mcp",
+        )
+        url = config.http_url.rstrip("/") + config.mcp_path
+        assert url == "http://localhost:8000/mcp"
+
+    def test_custom_mcp_path(self) -> None:
+        """Custom mcp_path is respected in URL construction."""
+        config = MCPConfig(
+            transport="http",
+            http_url="http://localhost:8000",
+            mcp_path="/v1/mcp",
+        )
+        url = config.http_url.rstrip("/") + config.mcp_path
+        assert url == "http://localhost:8000/v1/mcp"

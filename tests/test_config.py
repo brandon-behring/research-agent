@@ -70,6 +70,22 @@ class TestMCPConfig:
         with pytest.raises(ValidationError):
             config.transport = "http"
 
+    def test_mcp_path_default(self) -> None:
+        """Default mcp_path is /mcp."""
+        config = MCPConfig()
+        assert config.mcp_path == "/mcp"
+
+    def test_mcp_path_override(self) -> None:
+        """Custom mcp_path is accepted."""
+        config = MCPConfig(mcp_path="/v1/mcp")
+        assert config.mcp_path == "/v1/mcp"
+
+    def test_mcp_path_env_var(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Loads mcp_path from MCP_PATH env var."""
+        monkeypatch.setenv("MCP_PATH", "/custom/endpoint")
+        config = MCPConfig()
+        assert config.mcp_path == "/custom/endpoint"
+
     def test_env_var_loading(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Loads transport from MCP_TRANSPORT env var."""
         monkeypatch.setenv("MCP_TRANSPORT", "http")

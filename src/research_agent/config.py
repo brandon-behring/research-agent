@@ -66,6 +66,11 @@ class MCPConfig(BaseSettings):
         alias="RESEARCH_KB_URL",
         description="HTTP endpoint for research-kb (Docker mode)",
     )
+    mcp_path: str = Field(
+        default="/mcp",
+        alias="MCP_PATH",
+        description="MCP endpoint path appended to http_url",
+    )
 
     model_config = {"frozen": True, "populate_by_name": True}
 

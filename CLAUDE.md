@@ -48,7 +48,7 @@ identified in the sub-tasks (`state.py:18` — `SubTask.methods_to_audit`).
 - **Closure-injected dependencies** — config and MCP client injected via closure,
   not in graph state (`graph.py:57-89`)
 - **Model tiering** — Haiku for planning, Sonnet for synthesis/analysis (`config.py:14-24`)
-- **MCP transport abstraction** — stdio (local dev) or HTTP (Docker) (`mcp_client.py:52-57`)
+- **MCP transport abstraction** — stdio (local dev) or HTTP via streamable_http_client (Docker) (`mcp_client.py:52-57`)
 
 ### Source Layout
 
@@ -95,5 +95,6 @@ Environment variables (see `.env.example`):
 - `MCP_TRANSPORT` — `stdio` (default) or `http`
 - `RESEARCH_KB_PATH` — Path to research-kb repo (stdio mode)
 - `RESEARCH_KB_URL` — HTTP endpoint (Docker mode, default `http://research-kb:8000`)
+- `MCP_PATH` — MCP endpoint path appended to HTTP URL (default `/mcp`)
 - `PLANNING_MODEL`, `SYNTHESIS_MODEL`, `ANALYSIS_MODEL` — Override model selection
 - `MAX_SEARCH_RESULTS`, `MAX_CONCEPTS`, `MAX_CITATIONS` — Limit tuning
