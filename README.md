@@ -128,11 +128,15 @@ If results are sparse for a topic, the synthesis report honestly identifies gaps
 ## Testing
 
 ```bash
-# Run all tests
-pytest
+# Unit tests (default, no env vars needed — all MCP calls mocked)
+pytest tests/ -v --cov=research_agent --cov-fail-under=80
 
-# With coverage
-pytest --cov=research_agent --cov-report=term-missing
+# Integration tests (requires live research-kb + API key)
+RESEARCH_KB_PATH=~/Claude/research-kb ANTHROPIC_API_KEY=sk-... \
+    pytest tests/ -m integration -v
+
+# Evals (separate, existing)
+pytest evals/ -m eval --timeout=120 -v
 
 # Run specific test module
 pytest tests/test_nodes.py -v

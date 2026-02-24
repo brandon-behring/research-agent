@@ -9,9 +9,10 @@ a structured report.
 
 ```bash
 # Testing
-pytest                                    # Run all tests
+pytest                                    # Run all tests (unit only)
 pytest tests/test_mcp_client.py           # MCP client tests only
 pytest --cov=research_agent               # With coverage
+pytest -m integration -v                  # Integration tests (requires live MCP + API key)
 
 # Code quality
 ruff check src/ tests/                    # Lint
