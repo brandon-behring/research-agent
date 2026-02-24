@@ -5,16 +5,21 @@ Architecture:
     call clean Python methods without knowing how research-kb is connected.
 
     Seven tools exposed (of research-kb's 20+):
-        1. search           — 4-signal hybrid search (BM25 + vector + graph + PageRank)
-        2. fast_search      — lightweight vector-only fallback
-        3. get_concept      — retrieve concept details from knowledge graph
-        4. graph_neighborhood — explore related concepts within N hops
-        5. citation_network — find citing/cited-by chains for a source
-        6. biblio_coupling  — related papers via shared reference overlap
-        7. audit_assumptions — method assumption documentation
+        1. search           -- 4-signal hybrid search (BM25 + vector + graph + PageRank)
+        2. fast_search      -- lightweight vector-only fallback
+        3. get_concept      -- retrieve concept details from knowledge graph
+        4. graph_neighborhood -- explore related concepts within N hops
+        5. citation_network -- find citing/cited-by chains for a source
+        6. biblio_coupling  -- related papers via shared reference overlap
+        7. audit_assumptions -- method assumption documentation
 
     Each method returns the raw markdown string from research-kb.
     Agent nodes parse what they need from the structured markdown.
+
+Resilience:
+    - Retries with exponential backoff on MCPToolError (3 attempts)
+    - Specific exception types (MCPConnectionError, MCPToolError)
+    - LangSmith tracing via @traceable (no-op without LANGCHAIN_API_KEY)
 """
 
 from __future__ import annotations
@@ -23,10 +28,13 @@ import json
 import logging
 from typing import Any
 
+from langsmith import traceable
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
+from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 from research_agent.config import MCPConfig
+from research_agent.exceptions import MCPConnectionError, MCPToolError
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +42,8 @@ logger = logging.getLogger(__name__)
 class ResearchKBClient:
     """Client for research-kb MCP server.
 
-    Usage:
+    Usage::
+
         async with ResearchKBClient(config) as client:
             results = await client.search("causal inference assumptions")
 
@@ -54,7 +63,7 @@ class ResearchKBClient:
         if self._config.transport == "stdio":
             await self._connect_stdio()
         else:
-            raise ValueError(f"Unsupported transport: {self._config.transport}")
+            raise MCPConnectionError(f"Unsupported transport: {self._config.transport}")
         return self
 
     async def __aexit__(self, *exc: Any) -> None:
@@ -63,7 +72,11 @@ class ResearchKBClient:
             await self._stdio_context.__aexit__(*exc)
 
     async def _connect_stdio(self) -> None:
-        """Establish stdio connection to research-kb server."""
+        """Establish stdio connection to research-kb server.
+
+        Raises:
+            MCPConnectionError: If RESEARCH_KB_PATH is not set or connection fails.
+        """
         if not self._config.research_kb_path:
             raise ValueError(
                 "RESEARCH_KB_PATH must be set for stdio transport. "
@@ -76,12 +89,22 @@ class ResearchKBClient:
             cwd=self._config.research_kb_path,
         )
 
-        self._stdio_context = stdio_client(server_params)
-        self._read, self._write = await self._stdio_context.__aenter__()
-        self._session = ClientSession(self._read, self._write)
-        await self._session.initialize()
-        logger.info("Connected to research-kb MCP server via stdio")
+        try:
+            self._stdio_context = stdio_client(server_params)
+            self._read, self._write = await self._stdio_context.__aenter__()
+            self._session = ClientSession(self._read, self._write)
+            await self._session.initialize()
+            logger.info("Connected to research-kb MCP server via stdio")
+        except Exception as e:
+            raise MCPConnectionError(f"Failed to connect via stdio: {e}") from e
 
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=1, max=10),
+        retry=retry_if_exception_type(MCPToolError),
+        reraise=True,
+    )
+    @traceable(name="mcp_call", run_type="tool")
     async def _call_tool(self, name: str, arguments: dict[str, Any]) -> str:
         """Call an MCP tool and return the text content.
 
@@ -93,7 +116,8 @@ class ResearchKBClient:
             The text content from the tool response.
 
         Raises:
-            RuntimeError: If not connected or tool call fails.
+            RuntimeError: If not connected.
+            MCPToolError: If the tool call returns an error.
         """
         if self._session is None:
             raise RuntimeError("Not connected. Use 'async with ResearchKBClient(...)' pattern.")
@@ -107,12 +131,12 @@ class ResearchKBClient:
 
         if result.isError:
             logger.error("MCP tool %s returned error: %s", name, output)
-            raise RuntimeError(f"MCP tool '{name}' failed: {output}")
+            raise MCPToolError(tool_name=name, detail=output)
 
         logger.debug("MCP tool %s returned %d chars", name, len(output))
         return output
 
-    # ── Search tools ────────────────────────────────────────────────────
+    # -- Search tools -------------------------------------------------------
 
     async def search(
         self,
@@ -168,7 +192,7 @@ class ResearchKBClient:
             args["domain"] = domain
         return await self._call_tool("research_kb_fast_search", args)
 
-    # ── Concept tools ───────────────────────────────────────────────────
+    # -- Concept tools -------------------------------------------------------
 
     async def get_concept(
         self,
@@ -210,7 +234,7 @@ class ResearchKBClient:
             {"concept_name": concept_name, "hops": hops, "limit": limit},
         )
 
-    # ── Citation tools ──────────────────────────────────────────────────
+    # -- Citation tools -------------------------------------------------------
 
     async def citation_network(
         self,
@@ -252,7 +276,7 @@ class ResearchKBClient:
             {"source_id": source_id, "limit": limit, "min_coupling": min_coupling},
         )
 
-    # ── Assumption tools ────────────────────────────────────────────────
+    # -- Assumption tools -------------------------------------------------------
 
     async def audit_assumptions(
         self,

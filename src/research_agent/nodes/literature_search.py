@@ -7,10 +7,12 @@ fallback if the main search returns sparse results.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 
 from research_agent.config import AgentConfig
+from research_agent.exceptions import MCPToolError, SearchError
 from research_agent.mcp_client import ResearchKBClient
 from research_agent.state import NodeUpdate, ResearchState, SearchResult
 
@@ -118,39 +120,47 @@ async def literature_search(
     all_results: list[SearchResult] = []
     seen_source_ids: set[str] = set()
 
-    for task in state.sub_tasks:
-        for query in task.search_queries:
-            try:
-                raw = await mcp.search(
-                    query=query,
-                    limit=config.max_search_results,
-                    context_type="balanced",
-                )
-                parsed = _parse_search_results(raw)
+    try:
+        async with asyncio.timeout(45):
+            for task in state.sub_tasks:
+                for query in task.search_queries:
+                    try:
+                        raw = await mcp.search(
+                            query=query,
+                            limit=config.max_search_results,
+                            context_type="balanced",
+                        )
+                        parsed = _parse_search_results(raw)
 
-                # Deduplicate by source_id
-                for result in parsed:
-                    if result.source_id and result.source_id not in seen_source_ids:
-                        seen_source_ids.add(result.source_id)
-                        all_results.append(result)
-                    elif not result.source_id:
-                        all_results.append(result)
+                        # Deduplicate by source_id
+                        for result in parsed:
+                            if result.source_id and result.source_id not in seen_source_ids:
+                                seen_source_ids.add(result.source_id)
+                                all_results.append(result)
+                            elif not result.source_id:
+                                all_results.append(result)
 
-                logger.info("Query '%s': found %d results", query, len(parsed))
+                        logger.info("Query '%s': found %d results", query, len(parsed))
 
-            except Exception as e:
-                logger.error("Search failed for '%s': %s", query, e)
-                # Try fast_search as fallback
-                try:
-                    raw = await mcp.fast_search(query=query, limit=5)
-                    parsed = _parse_search_results(raw)
-                    for result in parsed:
-                        if result.source_id not in seen_source_ids:
-                            seen_source_ids.add(result.source_id)
-                            all_results.append(result)
-                    logger.info("Fast search fallback for '%s': %d results", query, len(parsed))
-                except Exception as e2:
-                    logger.error("Fast search also failed for '%s': %s", query, e2)
+                    except (MCPToolError, RuntimeError) as e:
+                        logger.error("Search failed for '%s': %s", query, e)
+                        # Try fast_search as fallback
+                        try:
+                            raw = await mcp.fast_search(query=query, limit=5)
+                            parsed = _parse_search_results(raw)
+                            for result in parsed:
+                                if result.source_id not in seen_source_ids:
+                                    seen_source_ids.add(result.source_id)
+                                    all_results.append(result)
+                            logger.info(
+                                "Fast search fallback for '%s': %d results", query, len(parsed)
+                            )
+                        except (MCPToolError, RuntimeError) as e2:
+                            logger.error("Fast search also failed for '%s': %s", query, e2)
+    except TimeoutError as e:
+        logger.warning("Literature search timed out after 45s with %d results", len(all_results))
+        if not all_results:
+            raise SearchError("Literature search timed out with no results") from e
 
     # Sort by score descending
     all_results.sort(key=lambda r: r.score, reverse=True)

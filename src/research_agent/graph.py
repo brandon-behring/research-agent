@@ -137,7 +137,14 @@ async def run_research(query: str, config: AgentConfig | None = None) -> dict:
     async with ResearchKBClient(config.mcp) as mcp:
         graph = build_graph(config, mcp)
         initial_state = ResearchState(query=query)
-        final_state = await graph.ainvoke(initial_state)
+        final_state = await graph.ainvoke(
+            initial_state,
+            config={
+                "run_name": "research_agent",
+                "metadata": {"query": query[:200]},
+                "tags": ["research-agent"],
+            },
+        )
 
     logger.info("Research complete. Report length: %d chars", len(final_state.get("report", "")))
     return final_state

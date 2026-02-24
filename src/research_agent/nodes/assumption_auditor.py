@@ -8,9 +8,11 @@ identification depends on assumptions.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 
 from research_agent.config import AgentConfig
+from research_agent.exceptions import MCPToolError
 from research_agent.mcp_client import ResearchKBClient
 from research_agent.state import AssumptionAudit, NodeUpdate, ResearchState
 
@@ -37,34 +39,39 @@ async def assumption_auditor(
     audits: list[AssumptionAudit] = []
     audited_methods: set[str] = set()
 
-    # Collect all methods from sub-tasks
-    for task in state.sub_tasks:
-        for method in task.methods_to_audit:
-            method_lower = method.lower()
-            if method_lower in audited_methods:
-                continue
-            audited_methods.add(method_lower)
+    try:
+        async with asyncio.timeout(45):
+            # Collect all methods from sub-tasks
+            for task in state.sub_tasks:
+                for method in task.methods_to_audit:
+                    method_lower = method.lower()
+                    if method_lower in audited_methods:
+                        continue
+                    audited_methods.add(method_lower)
 
-            try:
-                raw = await mcp.audit_assumptions(
-                    method_name=method,
-                    include_docstring=True,
-                )
-                audit = AssumptionAudit(
-                    method_name=method,
-                    raw_output=raw,
-                )
-                audits.append(audit)
-                logger.info("Audited assumptions for: %s", method)
+                    try:
+                        raw = await mcp.audit_assumptions(
+                            method_name=method,
+                            include_docstring=True,
+                        )
+                        audit = AssumptionAudit(
+                            method_name=method,
+                            raw_output=raw,
+                        )
+                        audits.append(audit)
+                        logger.info("Audited assumptions for: %s", method)
 
-            except Exception as e:
-                logger.warning("Assumption audit failed for '%s': %s", method, e)
-                audits.append(
-                    AssumptionAudit(
-                        method_name=method,
-                        raw_output=f"Audit failed: {e}",
-                    )
-                )
+                    except (MCPToolError, RuntimeError) as e:
+                        logger.warning("Assumption audit failed for '%s': %s", method, e)
+                        audits.append(
+                            AssumptionAudit(
+                                method_name=method,
+                                raw_output=f"Audit failed: {e}",
+                            )
+                        )
+
+    except TimeoutError:
+        logger.warning("Assumption auditing timed out with %d audits", len(audits))
 
     if not audits:
         summary = "No statistical methods identified for assumption auditing."

@@ -10,6 +10,7 @@ eliminating fragile regex/JSON parsing.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 
 from langchain_anthropic import ChatAnthropic
@@ -17,6 +18,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
 
 from research_agent.config import AgentConfig
+from research_agent.exceptions import PlannerError
 from research_agent.state import NodeUpdate, ResearchState, SubTask
 
 logger = logging.getLogger(__name__)
@@ -59,6 +61,9 @@ async def query_planner(state: ResearchState, config: AgentConfig) -> NodeUpdate
 
     Returns:
         NodeUpdate with ``sub_tasks`` and ``planning_rationale``.
+
+    Raises:
+        PlannerError: If planning fails after timeout or LLM error.
     """
     logger.info("Planning research for: %s", state.query)
 
@@ -68,10 +73,16 @@ async def query_planner(state: ResearchState, config: AgentConfig) -> NodeUpdate
         temperature=0.0,
     ).with_structured_output(PlannerOutput)
 
-    result: PlannerOutput = await llm.ainvoke([
-        SystemMessage(content=SYSTEM_PROMPT),
-        HumanMessage(content=f"Research question: {state.query}"),
-    ])
+    try:
+        async with asyncio.timeout(30):
+            result: PlannerOutput = await llm.ainvoke([
+                SystemMessage(content=SYSTEM_PROMPT),
+                HumanMessage(content=f"Research question: {state.query}"),
+            ])
+    except TimeoutError as e:
+        raise PlannerError(f"Query planning timed out after 30s for: {state.query}") from e
+    except Exception as e:
+        raise PlannerError(f"Query planning failed: {e}") from e
 
     logger.info("Created %d sub-tasks", len(result.sub_tasks))
     return NodeUpdate(

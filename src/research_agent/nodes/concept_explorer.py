@@ -7,10 +7,12 @@ Also extracts concept IDs from search results for deeper exploration.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 
 from research_agent.config import AgentConfig
+from research_agent.exceptions import MCPToolError
 from research_agent.mcp_client import ResearchKBClient
 from research_agent.state import ConceptInfo, NodeUpdate, ResearchState
 
@@ -69,7 +71,7 @@ def _parse_concept_detail(markdown: str) -> ConceptInfo | None:
         description = desc_match.group(1).strip()
 
     # Extract relationships
-    rel_pattern = re.compile(r"- (\w+)\s*→\s*`([^`]+)`")
+    rel_pattern = re.compile(r"- (\w+)\s*\u2192\s*`([^`]+)`")
     for match in rel_pattern.finditer(markdown):
         relationships.append({
             "type": match.group(1),
@@ -133,42 +135,46 @@ async def concept_explorer(
     # Limit to avoid excessive API calls
     unique_names = unique_names[: config.max_concepts]
 
-    for name in unique_names:
-        try:
-            raw = await mcp.graph_neighborhood(
-                concept_name=name,
-                hops=2,
-                limit=30,
-            )
+    try:
+        async with asyncio.timeout(45):
+            for name in unique_names:
+                try:
+                    raw = await mcp.graph_neighborhood(
+                        concept_name=name,
+                        hops=2,
+                        limit=30,
+                    )
 
-            info = ConceptInfo(
-                concept_id="",
-                name=name,
-                neighborhood_summary=raw,
-            )
-            concepts.append(info)
-            logger.info("Explored neighborhood for concept: %s", name)
+                    info = ConceptInfo(
+                        concept_id="",
+                        name=name,
+                        neighborhood_summary=raw,
+                    )
+                    concepts.append(info)
+                    logger.info("Explored neighborhood for concept: %s", name)
 
-        except Exception as e:
-            logger.warning("Failed to explore concept '%s': %s", name, e)
+                except (MCPToolError, RuntimeError) as e:
+                    logger.warning("Failed to explore concept '%s': %s", name, e)
 
-    # Also try to get details for any concept IDs found in search results
-    concept_ids_seen: set[str] = set()
-    for result in state.search_results[:5]:  # Top 5 results
-        if result.source_id:
-            # Extract concepts mentioned in the content
-            id_pattern = re.compile(r"Concept ID:\s*`([^`]+)`")
-            for match in id_pattern.finditer(result.content):
-                cid = match.group(1)
-                if cid not in concept_ids_seen:
-                    concept_ids_seen.add(cid)
-                    try:
-                        raw = await mcp.get_concept(cid)
-                        parsed = _parse_concept_detail(raw)
-                        if parsed:
-                            concepts.append(parsed)
-                    except Exception as e:
-                        logger.warning("Failed to get concept %s: %s", cid, e)
+            # Also try to get details for any concept IDs found in search results
+            concept_ids_seen: set[str] = set()
+            for result in state.search_results[:5]:  # Top 5 results
+                if result.source_id:
+                    id_pattern = re.compile(r"Concept ID:\s*`([^`]+)`")
+                    for match in id_pattern.finditer(result.content):
+                        cid = match.group(1)
+                        if cid not in concept_ids_seen:
+                            concept_ids_seen.add(cid)
+                            try:
+                                raw = await mcp.get_concept(cid)
+                                parsed = _parse_concept_detail(raw)
+                                if parsed:
+                                    concepts.append(parsed)
+                            except (MCPToolError, RuntimeError) as e:
+                                logger.warning("Failed to get concept %s: %s", cid, e)
+
+    except TimeoutError:
+        logger.warning("Concept exploration timed out with %d concepts", len(concepts))
 
     summary = f"Explored {len(unique_names)} concepts, found {len(concepts)} total entries."
     logger.info(summary)

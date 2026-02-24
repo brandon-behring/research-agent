@@ -9,6 +9,7 @@ Uses ``with_structured_output()`` for guaranteed report structure.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Literal
 
@@ -17,6 +18,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
 
 from research_agent.config import AgentConfig
+from research_agent.exceptions import SynthesisError
 from research_agent.state import NodeUpdate, ResearchState
 
 logger = logging.getLogger(__name__)
@@ -152,6 +154,9 @@ async def synthesis_writer(state: ResearchState, config: AgentConfig) -> NodeUpd
 
     Returns:
         NodeUpdate with ``report`` and ``confidence_assessment``.
+
+    Raises:
+        SynthesisError: If synthesis fails after timeout or LLM error.
     """
     logger.info("Synthesizing research report")
 
@@ -164,10 +169,18 @@ async def synthesis_writer(state: ResearchState, config: AgentConfig) -> NodeUpd
         temperature=0.1,
     ).with_structured_output(SynthesisReport)
 
-    result: SynthesisReport = await llm.ainvoke([
-        SystemMessage(content=SYSTEM_PROMPT),
-        HumanMessage(content=f"Synthesize the following research evidence:\n\n{evidence}"),
-    ])
+    try:
+        async with asyncio.timeout(60):
+            result: SynthesisReport = await llm.ainvoke([
+                SystemMessage(content=SYSTEM_PROMPT),
+                HumanMessage(
+                    content=f"Synthesize the following research evidence:\n\n{evidence}"
+                ),
+            ])
+    except TimeoutError as e:
+        raise SynthesisError("Synthesis timed out after 60s") from e
+    except Exception as e:
+        raise SynthesisError(f"Synthesis failed: {e}") from e
 
     report_md = result.to_markdown()
     confidence = f"**{result.confidence_level}**: {result.confidence_reasoning}"

@@ -6,11 +6,13 @@ and discovers related papers through bibliographic coupling (shared references).
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 from typing import Any
 
 from research_agent.config import AgentConfig
+from research_agent.exceptions import MCPToolError
 from research_agent.mcp_client import ResearchKBClient
 from research_agent.state import CitationInfo, NodeUpdate, ResearchState
 
@@ -136,55 +138,60 @@ async def citation_analyzer(
     # Analyze top search results by score
     top_results = [r for r in state.search_results if r.source_id][:5]
 
-    for result in top_results:
-        if result.source_id in analyzed_ids:
-            continue
-        analyzed_ids.add(result.source_id)
+    try:
+        async with asyncio.timeout(45):
+            for result in top_results:
+                if result.source_id in analyzed_ids:
+                    continue
+                analyzed_ids.add(result.source_id)
 
-        citing: list[dict[str, str]] = []
-        cited_by: list[dict[str, str]] = []
-        similar: list[dict[str, Any]] = []
+                citing: list[dict[str, str]] = []
+                cited_by: list[dict[str, str]] = []
+                similar: list[dict[str, Any]] = []
 
-        # Get citation network
-        try:
-            raw = await mcp.citation_network(
-                source_id=result.source_id,
-                limit=config.max_citations,
-            )
-            citing, cited_by = _parse_citation_network(raw)
-            logger.info(
-                "Citation network for '%s': %d citing, %d cited-by",
-                result.title[:50],
-                len(citing),
-                len(cited_by),
-            )
-        except Exception as e:
-            logger.warning("Citation network failed for %s: %s", result.source_id, e)
+                # Get citation network
+                try:
+                    raw = await mcp.citation_network(
+                        source_id=result.source_id,
+                        limit=config.max_citations,
+                    )
+                    citing, cited_by = _parse_citation_network(raw)
+                    logger.info(
+                        "Citation network for '%s': %d citing, %d cited-by",
+                        result.title[:50],
+                        len(citing),
+                        len(cited_by),
+                    )
+                except (MCPToolError, RuntimeError) as e:
+                    logger.warning("Citation network failed for %s: %s", result.source_id, e)
 
-        # Get bibliographic coupling
-        try:
-            raw = await mcp.biblio_coupling(
-                source_id=result.source_id,
-                limit=10,
-            )
-            similar = _parse_biblio_coupling(raw)
-            logger.info(
-                "Found %d bibliographically similar papers for '%s'",
-                len(similar),
-                result.title[:50],
-            )
-        except Exception as e:
-            logger.warning("Biblio coupling failed for %s: %s", result.source_id, e)
+                # Get bibliographic coupling
+                try:
+                    raw = await mcp.biblio_coupling(
+                        source_id=result.source_id,
+                        limit=10,
+                    )
+                    similar = _parse_biblio_coupling(raw)
+                    logger.info(
+                        "Found %d bibliographically similar papers for '%s'",
+                        len(similar),
+                        result.title[:50],
+                    )
+                except (MCPToolError, RuntimeError) as e:
+                    logger.warning("Biblio coupling failed for %s: %s", result.source_id, e)
 
-        citations.append(
-            CitationInfo(
-                source_id=result.source_id,
-                source_title=result.title,
-                citing=citing,
-                cited_by=cited_by,
-                similar_papers=similar,
-            )
-        )
+                citations.append(
+                    CitationInfo(
+                        source_id=result.source_id,
+                        source_title=result.title,
+                        citing=citing,
+                        cited_by=cited_by,
+                        similar_papers=similar,
+                    )
+                )
+
+    except TimeoutError:
+        logger.warning("Citation analysis timed out with %d sources analyzed", len(citations))
 
     total_citing = sum(len(c.citing) for c in citations)
     total_cited = sum(len(c.cited_by) for c in citations)
