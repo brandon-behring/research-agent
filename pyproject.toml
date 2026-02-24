@@ -63,6 +63,7 @@ asyncio_mode = "auto"
 testpaths = ["tests"]
 markers = [
     "integration: marks tests requiring live MCP server",
+    "eval: marks evaluation tests (require ANTHROPIC_API_KEY, slow)",
 ]
 
 [tool.hatch.build.targets.wheel]

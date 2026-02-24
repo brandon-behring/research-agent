@@ -1,0 +1,18 @@
+{
+  "query": "What are the assumptions of double machine learning?",
+  "planner": {
+    "min_tasks": 2,
+    "expected_concepts": ["double machine learning", "cross-fitting"],
+    "expected_methods": ["DML"],
+    "min_search_queries": 2
+  },
+  "synthesis": {
+    "must_mention": ["Chernozhukov", "unconfoundedness"],
+    "confidence_range": ["medium", "high"],
+    "min_judge_scores": {
+      "completeness": 3,
+      "grounding": 3,
+      "gap_honesty": 3
+    }
+  }
+}

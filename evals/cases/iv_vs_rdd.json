@@ -1,0 +1,18 @@
+{
+  "query": "Compare instrumental variables and regression discontinuity design",
+  "planner": {
+    "min_tasks": 2,
+    "expected_concepts": ["instrumental variables", "regression discontinuity"],
+    "expected_methods": ["IV", "RDD"],
+    "min_search_queries": 3
+  },
+  "synthesis": {
+    "must_mention": ["exclusion restriction", "cutoff"],
+    "confidence_range": ["medium", "high"],
+    "min_judge_scores": {
+      "completeness": 3,
+      "grounding": 3,
+      "gap_honesty": 3
+    }
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "query": "How do causal forests estimate heterogeneous treatment effects?",
+  "planner": {
+    "min_tasks": 2,
+    "expected_concepts": ["causal forest", "heterogeneous treatment effects"],
+    "expected_methods": [],
+    "min_search_queries": 2
+  },
+  "synthesis": {
+    "must_mention": ["Athey", "treatment effect"],
+    "confidence_range": ["low", "medium", "high"],
+    "min_judge_scores": {
+      "completeness": 3,
+      "grounding": 2,
+      "gap_honesty": 3
+    }
+  }
+}
