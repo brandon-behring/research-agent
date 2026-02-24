@@ -24,7 +24,7 @@ class TestMCPClientConfig:
         """Stdio transport requires RESEARCH_KB_PATH."""
         config = MCPConfig(transport="stdio", research_kb_path="")
         client = ResearchKBClient(config)
-        with pytest.raises(ValueError, match="RESEARCH_KB_PATH must be set"):
+        with pytest.raises(MCPConnectionError, match="RESEARCH_KB_PATH must be set"):
             asyncio.run(client.__aenter__())
 
     def test_rejects_unsupported_transport(self) -> None:

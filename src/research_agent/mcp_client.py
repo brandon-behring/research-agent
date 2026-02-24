@@ -85,7 +85,7 @@ class ResearchKBClient:
             MCPConnectionError: If RESEARCH_KB_PATH is not set or connection fails.
         """
         if not self._config.research_kb_path:
-            raise ValueError(
+            raise MCPConnectionError(
                 "RESEARCH_KB_PATH must be set for stdio transport. "
                 "Point it to the research-kb repository root."
             )

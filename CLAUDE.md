@@ -42,14 +42,14 @@ Query Planner → Literature Search → Concept Explorer → Citation Analyzer
 ```
 
 Conditional edge: Citation Analyzer skips Assumption Auditor if no methods were
-identified in the sub-tasks (`state.py:18` — `SubTask.methods_to_audit`).
+identified in the sub-tasks (`state.py:31` — `SubTask.methods_to_audit`).
 
 ### Design Decisions
 
-- **Dataclass state** (not TypedDict) for richer type support (`state.py:67`)
+- **Dataclass state** (not TypedDict) for richer type support (`state.py:113`)
 - **Closure-injected dependencies** — config and MCP client injected via closure,
-  not in graph state (`graph.py:57-89`)
-- **Model tiering** — Haiku for planning, Sonnet for synthesis/analysis (`config.py:14-24`)
+  not in graph state (`graph.py:60-92`)
+- **Model tiering** — Haiku for planning, Sonnet for synthesis/analysis (`config.py:20-40`)
 - **MCP transport abstraction** — stdio (local dev) or HTTP via streamable_http_client (Docker) (`mcp_client.py:52-57`)
 
 ### Source Layout
