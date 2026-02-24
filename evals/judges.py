@@ -73,10 +73,12 @@ async def grade_synthesis(
         "Grade the report on completeness, grounding, gap_honesty, and coherence."
     )
 
-    verdict: JudgeVerdict = await llm.ainvoke([
-        SystemMessage(content=JUDGE_SYSTEM_PROMPT),
-        HumanMessage(content=prompt),
-    ])
+    verdict: JudgeVerdict = await llm.ainvoke(
+        [
+            SystemMessage(content=JUDGE_SYSTEM_PROMPT),
+            HumanMessage(content=prompt),
+        ]
+    )
 
     logger.info(
         "Judge scores: completeness=%d grounding=%d gap_honesty=%d coherence=%d (avg=%.1f)",

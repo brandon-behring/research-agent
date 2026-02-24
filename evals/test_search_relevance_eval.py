@@ -133,9 +133,7 @@ class TestSearchParsing:
         expected_sources = {"src-001-dml", "src-002-cate", "src-003-crossfit", "src-004-lean"}
         actual_sources = {r.source_id for r in results}
         precision = (
-            len(expected_sources & actual_sources) / len(actual_sources)
-            if actual_sources
-            else 0
+            len(expected_sources & actual_sources) / len(actual_sources) if actual_sources else 0
         )
 
         eval_result = EvalResult(

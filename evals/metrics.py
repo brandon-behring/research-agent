@@ -91,9 +91,7 @@ class EvalResult:
     scores: dict[str, float] = field(default_factory=dict)
     passed: bool = True
     errors: list[str] = field(default_factory=list)
-    timestamp: str = field(
-        default_factory=lambda: datetime.now(UTC).isoformat()
-    )
+    timestamp: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
 
 
 def write_eval_results(results: list[EvalResult], path: str) -> None:
@@ -107,14 +105,16 @@ def write_eval_results(results: list[EvalResult], path: str) -> None:
         writer = csv.writer(f)
         writer.writerow(["timestamp", "case_name", "dimension", "passed", "scores", "errors"])
         for r in results:
-            writer.writerow([
-                r.timestamp,
-                r.case_name,
-                r.dimension,
-                r.passed,
-                str(r.scores),
-                "; ".join(r.errors),
-            ])
+            writer.writerow(
+                [
+                    r.timestamp,
+                    r.case_name,
+                    r.dimension,
+                    r.passed,
+                    str(r.scores),
+                    "; ".join(r.errors),
+                ]
+            )
 
 
 def print_eval_summary(results: list[EvalResult]) -> str:

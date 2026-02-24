@@ -75,17 +75,13 @@ async def test_planner_decomposition(case_name: str) -> None:
     # Assertions
     errors = []
     if len(sub_tasks) < expectations["min_tasks"]:
-        errors.append(
-            f"Too few tasks: {len(sub_tasks)} < {expectations['min_tasks']}"
-        )
+        errors.append(f"Too few tasks: {len(sub_tasks)} < {expectations['min_tasks']}")
     if c_recall < 0.5:
         errors.append(f"Low concept recall: {c_recall:.2f}")
     if m_recall < 0.5:
         errors.append(f"Low method recall: {m_recall:.2f}")
     if total_queries < expectations["min_search_queries"]:
-        errors.append(
-            f"Too few queries: {total_queries} < {expectations['min_search_queries']}"
-        )
+        errors.append(f"Too few queries: {total_queries} < {expectations['min_search_queries']}")
 
     if errors:
         eval_result.passed = False

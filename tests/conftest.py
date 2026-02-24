@@ -165,21 +165,20 @@ to avoid overfitting bias in nuisance parameter estimation.
 """
 
     client.biblio_coupling.return_value = (
-        """## Bibliographically Similar: Double/Debiased Machine Learning
-*Source ID: `src-001-dml`*
-
-**2 similar sources** by shared references
-
-- **Debiased Machine Learning of CATEs** (2021)
-  - Semenova and Chernozhukov
-  - Coupling: **45.2%** (8 shared refs)
-  - ID: `src-002-cate`
-
-- **Automatic Debiased Machine Learning** (2022)
-  - Chernozhukov et al.
-  - Coupling: **38.7%** (6 shared refs)
-  - ID: `src-005-auto`
-"""
+        "## Bibliographically Similar: Double/Debiased ML\n"
+        "*Source ID: `src-001-dml`*\n"
+        "\n"
+        "**2 similar sources** by shared references\n"
+        "\n"
+        "- **Debiased Machine Learning of CATEs** (2021)\n"
+        "  - Semenova and Chernozhukov\n"
+        "  - Coupling: **45.2%** (8 shared refs)\n"
+        "  - ID: `src-002-cate`\n"
+        "\n"
+        "- **Automatic Debiased Machine Learning** (2022)\n"
+        "  - Chernozhukov et al.\n"
+        "  - Coupling: **38.7%** (6 shared refs)\n"
+        "  - ID: `src-005-auto`\n"
     )
 
     # --- Assumption audit response ---

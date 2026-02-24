@@ -19,8 +19,10 @@ Design decisions:
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from langgraph.graph import END, StateGraph
+from langgraph.graph.state import CompiledStateGraph
 
 from research_agent.config import AgentConfig
 from research_agent.mcp_client import ResearchKBClient
@@ -53,7 +55,7 @@ def _should_audit_assumptions(state: ResearchState) -> str:
     return "synthesis"
 
 
-def build_graph(config: AgentConfig, mcp: ResearchKBClient) -> StateGraph:
+def build_graph(config: AgentConfig, mcp: ResearchKBClient) -> CompiledStateGraph:  # type: ignore[type-arg]
     """Construct the research analysis graph.
 
     Nodes are wrapped in closures to inject config and MCP client.
@@ -88,7 +90,7 @@ def build_graph(config: AgentConfig, mcp: ResearchKBClient) -> StateGraph:
         return await synthesis_writer(state, config)
 
     # Build graph
-    graph = StateGraph(ResearchState)
+    graph: StateGraph[ResearchState] = StateGraph(ResearchState)
 
     # Add nodes
     graph.add_node("query_planner", _query_planner)
@@ -119,7 +121,7 @@ def build_graph(config: AgentConfig, mcp: ResearchKBClient) -> StateGraph:
     return graph.compile()
 
 
-async def run_research(query: str, config: AgentConfig | None = None) -> dict:
+async def run_research(query: str, config: AgentConfig | None = None) -> dict[str, Any]:
     """Execute the full research pipeline.
 
     Args:
@@ -147,4 +149,4 @@ async def run_research(query: str, config: AgentConfig | None = None) -> dict:
         )
 
     logger.info("Research complete. Report length: %d chars", len(final_state.get("report", "")))
-    return final_state
+    return dict(final_state)

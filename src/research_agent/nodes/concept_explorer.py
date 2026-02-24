@@ -73,10 +73,12 @@ def _parse_concept_detail(markdown: str) -> ConceptInfo | None:
     # Extract relationships
     rel_pattern = re.compile(r"- (\w+)\s*\u2192\s*`([^`]+)`")
     for match in rel_pattern.finditer(markdown):
-        relationships.append({
-            "type": match.group(1),
-            "target_id": match.group(2),
-        })
+        relationships.append(
+            {
+                "type": match.group(1),
+                "target_id": match.group(2),
+            }
+        )
 
     if not concept_id and not name:
         return None

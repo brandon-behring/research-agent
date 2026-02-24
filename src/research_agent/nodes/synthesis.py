@@ -112,26 +112,21 @@ def _build_evidence_context(state: ResearchState) -> str:
     # Citations
     if state.citations:
         cite_lines = [f"## Citation Networks ({len(state.citations)} sources analyzed)"]
-        for c in state.citations:
-            cite_lines.append(f"\n### {c.source_title}")
-            if c.citing:
-                cite_lines.append(f"Citing ({len(c.citing)}):")
-                for ref in c.citing[:5]:
+        for cit in state.citations:
+            cite_lines.append(f"\n### {cit.source_title}")
+            if cit.citing:
+                cite_lines.append(f"Citing ({len(cit.citing)}):")
+                for ref in cit.citing[:5]:
+                    cite_lines.append(f"  - {ref.get('title', 'Unknown')} ({ref.get('year', '?')})")
+            if cit.cited_by:
+                cite_lines.append(f"Cited by ({len(cit.cited_by)}):")
+                for ref in cit.cited_by[:5]:
+                    cite_lines.append(f"  - {ref.get('title', 'Unknown')} ({ref.get('year', '?')})")
+            if cit.similar_papers:
+                cite_lines.append(f"Similar papers ({len(cit.similar_papers)}):")
+                for p in cit.similar_papers[:5]:
                     cite_lines.append(
-                        f"  - {ref.get('title', 'Unknown')} ({ref.get('year', '?')})"
-                    )
-            if c.cited_by:
-                cite_lines.append(f"Cited by ({len(c.cited_by)}):")
-                for ref in c.cited_by[:5]:
-                    cite_lines.append(
-                        f"  - {ref.get('title', 'Unknown')} ({ref.get('year', '?')})"
-                    )
-            if c.similar_papers:
-                cite_lines.append(f"Similar papers ({len(c.similar_papers)}):")
-                for p in c.similar_papers[:5]:
-                    cite_lines.append(
-                        f"  - {p.get('title', 'Unknown')} "
-                        f"({p.get('coupling_pct', 0):.0f}% overlap)"
+                        f"  - {p.get('title', 'Unknown')} ({p.get('coupling_pct', 0):.0f}% overlap)"
                     )
         sections.append("\n".join(cite_lines))
 
@@ -164,19 +159,21 @@ async def synthesis_writer(state: ResearchState, config: AgentConfig) -> NodeUpd
     logger.info("Evidence context: %d chars", len(evidence))
 
     llm = ChatAnthropic(
-        model=config.models.synthesis,
+        model=config.models.synthesis,  # type: ignore[call-arg]
         max_tokens=4096,
         temperature=0.1,
     ).with_structured_output(SynthesisReport)
 
     try:
         async with asyncio.timeout(60):
-            result: SynthesisReport = await llm.ainvoke([
-                SystemMessage(content=SYSTEM_PROMPT),
-                HumanMessage(
-                    content=f"Synthesize the following research evidence:\n\n{evidence}"
-                ),
-            ])
+            result: SynthesisReport = await llm.ainvoke(  # type: ignore[assignment]
+                [
+                    SystemMessage(content=SYSTEM_PROMPT),
+                    HumanMessage(
+                        content=f"Synthesize the following research evidence:\n\n{evidence}"
+                    ),
+                ]
+            )
     except TimeoutError as e:
         raise SynthesisError("Synthesis timed out after 60s") from e
     except Exception as e:

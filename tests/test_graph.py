@@ -109,9 +109,7 @@ class TestEndToEnd:
             mock_synth_cls.return_value.with_structured_output.return_value = mock_synth
 
             graph = build_graph(e2e_config, mock_mcp)
-            initial = ResearchState(
-                query="What are the assumptions of double machine learning?"
-            )
+            initial = ResearchState(query="What are the assumptions of double machine learning?")
             result = await graph.ainvoke(initial)
 
         # Verify all nodes executed

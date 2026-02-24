@@ -68,17 +68,19 @@ async def query_planner(state: ResearchState, config: AgentConfig) -> NodeUpdate
     logger.info("Planning research for: %s", state.query)
 
     llm = ChatAnthropic(
-        model=config.models.planning,
+        model=config.models.planning,  # type: ignore[call-arg]
         max_tokens=2048,
         temperature=0.0,
     ).with_structured_output(PlannerOutput)
 
     try:
         async with asyncio.timeout(30):
-            result: PlannerOutput = await llm.ainvoke([
-                SystemMessage(content=SYSTEM_PROMPT),
-                HumanMessage(content=f"Research question: {state.query}"),
-            ])
+            result: PlannerOutput = await llm.ainvoke(  # type: ignore[assignment]
+                [
+                    SystemMessage(content=SYSTEM_PROMPT),
+                    HumanMessage(content=f"Research question: {state.query}"),
+                ]
+            )
     except TimeoutError as e:
         raise PlannerError(f"Query planning timed out after 30s for: {state.query}") from e
     except Exception as e:
