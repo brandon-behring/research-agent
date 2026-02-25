@@ -20,18 +20,16 @@ class TestModelConfig:
         config = ModelConfig()
         assert "haiku" in config.planning
         assert "sonnet" in config.synthesis
-        assert "sonnet" in config.analysis
+        assert "sonnet" in config.synthesis
 
     def test_explicit_overrides(self) -> None:
         """Constructor overrides work for tests."""
         config = ModelConfig(
             planning="test-model",
             synthesis="test-model-2",
-            analysis="test-model-3",
         )
         assert config.planning == "test-model"
         assert config.synthesis == "test-model-2"
-        assert config.analysis == "test-model-3"
 
     def test_frozen(self) -> None:
         """ModelConfig is immutable."""

@@ -147,7 +147,6 @@ class ResearchState(BaseModel):
     confidence_assessment: str = ""
 
     # --- Metadata ---
-    errors: list[str] = Field(default_factory=list)
     current_node: str = ""
 
 
@@ -169,5 +168,4 @@ class NodeUpdate(TypedDict, total=False):
     assumption_summary: str
     report: str
     confidence_assessment: str
-    errors: list[str]
     current_node: str

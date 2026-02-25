@@ -22,7 +22,6 @@ def test_config() -> AgentConfig:
         models=ModelConfig(
             planning="claude-haiku-4-5-20251001",
             synthesis="claude-haiku-4-5-20251001",  # Use haiku for speed in tests
-            analysis="claude-haiku-4-5-20251001",
         ),
         mcp=MCPConfig(transport="stdio", research_kb_path="/fake/path"),
         max_search_results=5,

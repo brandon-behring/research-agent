@@ -43,7 +43,6 @@ def integration_config() -> AgentConfig:
         models=ModelConfig(
             planning="claude-haiku-4-5-20251001",
             synthesis="claude-haiku-4-5-20251001",
-            analysis="claude-haiku-4-5-20251001",
         ),
         mcp=MCPConfig(
             transport="stdio",

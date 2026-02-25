@@ -34,11 +34,6 @@ class ModelConfig(BaseSettings):
         alias="SYNTHESIS_MODEL",
         description="Model for report synthesis (strong reasoning)",
     )
-    analysis: str = Field(
-        default="claude-sonnet-4-6",
-        alias="ANALYSIS_MODEL",
-        description="Model for analysis nodes",
-    )
 
     model_config = {"frozen": True, "populate_by_name": True}
 
@@ -74,7 +69,7 @@ class MCPConfig(BaseSettings):
     research_kb_python: str = Field(
         default="",
         alias="RESEARCH_KB_PYTHON",
-        description="Path to Python executable for stdio transport (default: {research_kb_path}/venv/bin/python)",
+        description="Python executable for stdio transport (default: {kb_path}/venv/bin/python)",
     )
 
     model_config = {"frozen": True, "populate_by_name": True}
