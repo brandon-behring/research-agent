@@ -189,10 +189,7 @@ async def literature_search(
     # Sort by score descending
     all_results.sort(key=lambda r: r.score, reverse=True)
 
-    summary = (
-        f"Found {len(all_results)} unique results across "
-        f"{len(all_queries)} queries."
-    )
+    summary = f"Found {len(all_results)} unique results across {len(all_queries)} queries."
     logger.info(summary)
 
     return NodeUpdate(

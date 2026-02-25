@@ -188,9 +188,7 @@ async def citation_analyzer(
                             "Biblio coupling failed for %s: %s", result.source_id, bib_raw
                         )
                 except Exception as e:
-                    logger.warning(
-                        "Citation analysis failed for %s: %s", result.source_id, e
-                    )
+                    logger.warning("Citation analysis failed for %s: %s", result.source_id, e)
 
                 citations.append(
                     CitationInfo(
