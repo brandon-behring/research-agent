@@ -192,9 +192,7 @@ async def concept_explorer(
             )
             for i, r in enumerate(neighborhood_results):
                 if isinstance(r, BaseException):
-                    logger.warning(
-                        "Unexpected error exploring '%s': %s", unique_names[i], r
-                    )
+                    logger.warning("Unexpected error exploring '%s': %s", unique_names[i], r)
                 elif r is not None:
                     concepts.append(r)
 

@@ -114,8 +114,7 @@ class ResearchKBClient:
             )
 
         python_cmd = (
-            self._config.research_kb_python
-            or f"{self._config.research_kb_path}/venv/bin/python"
+            self._config.research_kb_python or f"{self._config.research_kb_path}/venv/bin/python"
         )
         server_params = StdioServerParameters(
             command=python_cmd,

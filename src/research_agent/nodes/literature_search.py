@@ -200,9 +200,7 @@ async def literature_search(
             # Deduplicate across all query results post-gather
             for i, raw in enumerate(batch_results):
                 if isinstance(raw, BaseException):
-                    logger.warning(
-                        "Unexpected error searching '%s': %s", all_queries[i], raw
-                    )
+                    logger.warning("Unexpected error searching '%s': %s", all_queries[i], raw)
                     continue
                 parsed, query = raw
                 for result in parsed:
