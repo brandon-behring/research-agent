@@ -73,6 +73,8 @@ class ResearchKBClient:
 
     async def __aexit__(self, *exc: Any) -> None:
         """Disconnect from the MCP server."""
+        if self._session:
+            await self._session.__aexit__(*exc)
         if self._stdio_context:
             await self._stdio_context.__aexit__(*exc)
         if self._http_context:
@@ -100,6 +102,7 @@ class ResearchKBClient:
             self._stdio_context = stdio_client(server_params)
             self._read, self._write = await self._stdio_context.__aenter__()
             self._session = ClientSession(self._read, self._write)
+            await self._session.__aenter__()
             await self._session.initialize()
             logger.info("Connected to research-kb MCP server via stdio")
         except Exception as e:
@@ -129,6 +132,7 @@ class ResearchKBClient:
             self._read = read_stream
             self._write = write_stream
             self._session = ClientSession(self._read, self._write)
+            await self._session.__aenter__()
             await self._session.initialize()
             logger.info("Connected to research-kb MCP server via HTTP")
         except (httpx.ConnectError, httpx.TimeoutException, httpx.HTTPStatusError, OSError) as e:
