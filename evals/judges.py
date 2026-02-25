@@ -5,7 +5,9 @@ Uses Haiku (cheap) to grade Sonnet output -- cost-efficient eval pattern.
 
 from __future__ import annotations
 
+import json
 import logging
+import re
 
 from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -21,7 +23,18 @@ Given a research report and the evidence it was based on, grade the report on th
 3. **gap_honesty** (1-5): Does the report honestly acknowledge limitations and gaps?
 4. **coherence** (1-5): Is the report well-organized and logically structured?
 
-Provide a brief justification for each score."""
+Respond with ONLY a JSON object (no markdown fences, no commentary) with this exact structure:
+{
+  "completeness": <int 1-5>,
+  "completeness_reason": "<brief justification>",
+  "grounding": <int 1-5>,
+  "grounding_reason": "<brief justification>",
+  "gap_honesty": <int 1-5>,
+  "gap_honesty_reason": "<brief justification>",
+  "coherence": <int 1-5>,
+  "coherence_reason": "<brief justification>",
+  "overall_assessment": "<brief overall assessment>"
+}"""
 
 
 class JudgeVerdict(BaseModel):
@@ -43,12 +56,23 @@ class JudgeVerdict(BaseModel):
         return (self.completeness + self.grounding + self.gap_honesty + self.coherence) / 4.0
 
 
+def _extract_json(text: str) -> dict:
+    """Extract JSON from LLM response, handling markdown fences."""
+    # Strip markdown code fences if present
+    cleaned = re.sub(r"^```(?:json)?\s*\n?", "", text.strip())
+    cleaned = re.sub(r"\n?```\s*$", "", cleaned)
+    return json.loads(cleaned)
+
+
 async def grade_synthesis(
     report: str,
     evidence: str,
     model: str = "claude-haiku-4-5-20251001",
 ) -> JudgeVerdict:
     """Grade a synthesis report using LLM-as-judge.
+
+    Uses direct JSON prompting instead of tool_use structured output
+    for reliable multi-field extraction from Haiku.
 
     Args:
         report: The generated research report.
@@ -59,26 +83,34 @@ async def grade_synthesis(
         JudgeVerdict with scores and justifications.
 
     Raises:
-        Exception: If the LLM call fails.
+        ValueError: If the LLM response cannot be parsed as valid JSON.
     """
     llm = ChatAnthropic(
         model=model,
-        max_tokens=1024,
+        max_tokens=4096,
         temperature=0.0,
-    ).with_structured_output(JudgeVerdict)
+    )
 
     prompt = (
         f"## Report to Grade\n\n{report}\n\n"
         f"## Evidence Provided\n\n{evidence[:5000]}\n\n"
-        "Grade the report on completeness, grounding, gap_honesty, and coherence."
+        "Grade the report on completeness, grounding, gap_honesty, and coherence. "
+        "Respond with ONLY the JSON object."
     )
 
-    verdict: JudgeVerdict = await llm.ainvoke(
+    response = await llm.ainvoke(
         [
             SystemMessage(content=JUDGE_SYSTEM_PROMPT),
             HumanMessage(content=prompt),
         ]
     )
+
+    try:
+        data = _extract_json(response.content)
+        verdict = JudgeVerdict(**data)
+    except (json.JSONDecodeError, ValueError) as e:
+        logger.error("Failed to parse judge response: %s\nRaw: %s", e, response.content)
+        raise ValueError(f"Judge response not valid JSON: {e}") from e
 
     logger.info(
         "Judge scores: completeness=%d grounding=%d gap_honesty=%d coherence=%d (avg=%.1f)",

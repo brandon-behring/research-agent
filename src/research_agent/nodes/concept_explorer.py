@@ -96,6 +96,36 @@ def _parse_concept_detail(markdown: str) -> ConceptInfo | None:
         return None
 
 
+async def _explore_one(
+    mcp: ResearchKBClient,
+    name: str,
+) -> ConceptInfo | None:
+    """Explore graph neighborhood for a single concept.
+
+    Args:
+        mcp: Connected MCP client.
+        name: Concept name to explore.
+
+    Returns:
+        ConceptInfo or None if exploration failed.
+    """
+    try:
+        raw = await mcp.graph_neighborhood(
+            concept_name=name,
+            hops=2,
+            limit=30,
+        )
+        logger.info("Explored neighborhood for concept: %s", name)
+        return ConceptInfo(
+            concept_id="",
+            name=name,
+            neighborhood_summary=raw,
+        )
+    except (MCPToolError, RuntimeError) as e:
+        logger.warning("Failed to explore concept '%s': %s", name, e)
+        return None
+
+
 async def concept_explorer(
     state: ResearchState,
     config: AgentConfig,
@@ -103,10 +133,9 @@ async def concept_explorer(
 ) -> NodeUpdate:
     """Explore concepts in the knowledge graph.
 
-    Strategy:
-        1. Collect concept names from planner sub-tasks
-        2. Explore graph neighborhoods for each concept
-        3. If concepts have IDs (from search results), fetch details
+    Fires all graph_neighborhood calls concurrently via asyncio.gather,
+    then sequentially fetches concept details for IDs found in search results
+    (typically 0-2 calls, not worth parallelizing).
 
     Args:
         state: Current state with sub_tasks and search_results.
@@ -118,7 +147,6 @@ async def concept_explorer(
     """
     logger.info("Exploring knowledge graph concepts")
 
-    concepts: list[ConceptInfo] = []
     explored_names: set[str] = set()
 
     # Collect concept names from all sub-tasks
@@ -137,28 +165,17 @@ async def concept_explorer(
     # Limit to avoid excessive API calls
     unique_names = unique_names[: config.max_concepts]
 
+    concepts: list[ConceptInfo] = []
+
     try:
         async with asyncio.timeout(45):
-            for name in unique_names:
-                try:
-                    raw = await mcp.graph_neighborhood(
-                        concept_name=name,
-                        hops=2,
-                        limit=30,
-                    )
+            # Fan out graph_neighborhood calls concurrently
+            neighborhood_results = await asyncio.gather(
+                *[_explore_one(mcp, name) for name in unique_names],
+            )
+            concepts = [r for r in neighborhood_results if r is not None]
 
-                    info = ConceptInfo(
-                        concept_id="",
-                        name=name,
-                        neighborhood_summary=raw,
-                    )
-                    concepts.append(info)
-                    logger.info("Explored neighborhood for concept: %s", name)
-
-                except (MCPToolError, RuntimeError) as e:
-                    logger.warning("Failed to explore concept '%s': %s", name, e)
-
-            # Also try to get details for any concept IDs found in search results
+            # Sequential get_concept for IDs found in search results (typically 0-2)
             concept_ids_seen: set[str] = set()
             for result in state.search_results[:5]:  # Top 5 results
                 if result.source_id:

@@ -100,12 +100,48 @@ def _parse_search_results(markdown: str) -> list[SearchResult]:
     return results
 
 
+async def _search_one(
+    mcp: ResearchKBClient,
+    query: str,
+    config: AgentConfig,
+) -> tuple[list[SearchResult], str]:
+    """Execute a single search query with fast_search fallback.
+
+    Args:
+        mcp: Connected MCP client.
+        query: Search query string.
+        config: Agent configuration (for max_search_results).
+
+    Returns:
+        Tuple of (parsed results, query string) for post-gather dedup.
+    """
+    try:
+        raw = await mcp.search(
+            query=query,
+            limit=config.max_search_results,
+            context_type="balanced",
+        )
+        return _parse_search_results(raw), query
+    except (MCPToolError, RuntimeError) as e:
+        logger.error("Search failed for '%s': %s", query, e)
+        try:
+            raw = await mcp.fast_search(query=query, limit=5)
+            logger.info("Fast search fallback for '%s'", query)
+            return _parse_search_results(raw), query
+        except (MCPToolError, RuntimeError) as e2:
+            logger.error("Fast search also failed for '%s': %s", query, e2)
+            return [], query
+
+
 async def literature_search(
     state: ResearchState,
     config: AgentConfig,
     mcp: ResearchKBClient,
 ) -> NodeUpdate:
     """Execute all search queries from sub-tasks against research-kb.
+
+    Fires all queries concurrently via asyncio.gather, then deduplicates
+    results by source_id post-gather.
 
     Args:
         state: Current state with sub_tasks populated.
@@ -117,48 +153,36 @@ async def literature_search(
     """
     logger.info("Starting literature search across %d sub-tasks", len(state.sub_tasks))
 
+    all_queries = [q for task in state.sub_tasks for q in task.search_queries]
     all_results: list[SearchResult] = []
     seen_source_ids: set[str] = set()
 
+    # Limit concurrency to avoid saturating research-kb's connection pool.
+    # Each search uses multiple DB operations (BM25 + vector + graph + citation).
+    sem = asyncio.Semaphore(3)
+
+    async def _bounded_search(q: str) -> tuple[list[SearchResult], str]:
+        async with sem:
+            return await _search_one(mcp, q, config)
+
     try:
-        async with asyncio.timeout(45):
-            for task in state.sub_tasks:
-                for query in task.search_queries:
-                    try:
-                        raw = await mcp.search(
-                            query=query,
-                            limit=config.max_search_results,
-                            context_type="balanced",
-                        )
-                        parsed = _parse_search_results(raw)
+        async with asyncio.timeout(90):
+            batch_results = await asyncio.gather(
+                *[_bounded_search(q) for q in all_queries],
+            )
 
-                        # Deduplicate by source_id
-                        for result in parsed:
-                            if result.source_id and result.source_id not in seen_source_ids:
-                                seen_source_ids.add(result.source_id)
-                                all_results.append(result)
-                            elif not result.source_id:
-                                all_results.append(result)
+            # Deduplicate across all query results post-gather
+            for parsed, query in batch_results:
+                for result in parsed:
+                    if result.source_id and result.source_id not in seen_source_ids:
+                        seen_source_ids.add(result.source_id)
+                        all_results.append(result)
+                    elif not result.source_id:
+                        all_results.append(result)
+                logger.info("Query '%s': found %d results", query, len(parsed))
 
-                        logger.info("Query '%s': found %d results", query, len(parsed))
-
-                    except (MCPToolError, RuntimeError) as e:
-                        logger.error("Search failed for '%s': %s", query, e)
-                        # Try fast_search as fallback
-                        try:
-                            raw = await mcp.fast_search(query=query, limit=5)
-                            parsed = _parse_search_results(raw)
-                            for result in parsed:
-                                if result.source_id not in seen_source_ids:
-                                    seen_source_ids.add(result.source_id)
-                                    all_results.append(result)
-                            logger.info(
-                                "Fast search fallback for '%s': %d results", query, len(parsed)
-                            )
-                        except (MCPToolError, RuntimeError) as e2:
-                            logger.error("Fast search also failed for '%s': %s", query, e2)
     except TimeoutError as e:
-        logger.warning("Literature search timed out after 45s with %d results", len(all_results))
+        logger.warning("Literature search timed out after 90s with %d results", len(all_results))
         if not all_results:
             raise SearchError("Literature search timed out with no results") from e
 
@@ -167,7 +191,7 @@ async def literature_search(
 
     summary = (
         f"Found {len(all_results)} unique results across "
-        f"{sum(len(t.search_queries) for t in state.sub_tasks)} queries."
+        f"{len(all_queries)} queries."
     )
     logger.info(summary)
 

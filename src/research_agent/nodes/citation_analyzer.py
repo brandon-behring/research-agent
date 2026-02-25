@@ -12,7 +12,6 @@ import re
 from typing import Any
 
 from research_agent.config import AgentConfig
-from research_agent.exceptions import MCPToolError
 from research_agent.mcp_client import ResearchKBClient
 from research_agent.state import CitationInfo, NodeUpdate, ResearchState
 
@@ -149,36 +148,49 @@ async def citation_analyzer(
                 cited_by: list[dict[str, str]] = []
                 similar: list[dict[str, Any]] = []
 
-                # Get citation network
+                # Pair-parallel: citation_network + biblio_coupling for same source
+                # Sequential across results to avoid retry-storm from citation_network bug
                 try:
-                    raw = await mcp.citation_network(
-                        source_id=result.source_id,
-                        limit=config.max_citations,
+                    net_raw, bib_raw = await asyncio.gather(
+                        mcp.citation_network(
+                            source_id=result.source_id,
+                            limit=config.max_citations,
+                        ),
+                        mcp.biblio_coupling(
+                            source_id=result.source_id,
+                            limit=10,
+                        ),
+                        return_exceptions=True,
                     )
-                    citing, cited_by = _parse_citation_network(raw)
-                    logger.info(
-                        "Citation network for '%s': %d citing, %d cited-by",
-                        result.title[:50],
-                        len(citing),
-                        len(cited_by),
-                    )
-                except (MCPToolError, RuntimeError) as e:
-                    logger.warning("Citation network failed for %s: %s", result.source_id, e)
 
-                # Get bibliographic coupling
-                try:
-                    raw = await mcp.biblio_coupling(
-                        source_id=result.source_id,
-                        limit=10,
+                    if not isinstance(net_raw, BaseException):
+                        citing, cited_by = _parse_citation_network(net_raw)
+                        logger.info(
+                            "Citation network for '%s': %d citing, %d cited-by",
+                            result.title[:50],
+                            len(citing),
+                            len(cited_by),
+                        )
+                    else:
+                        logger.warning(
+                            "Citation network failed for %s: %s", result.source_id, net_raw
+                        )
+
+                    if not isinstance(bib_raw, BaseException):
+                        similar = _parse_biblio_coupling(bib_raw)
+                        logger.info(
+                            "Found %d bibliographically similar papers for '%s'",
+                            len(similar),
+                            result.title[:50],
+                        )
+                    else:
+                        logger.warning(
+                            "Biblio coupling failed for %s: %s", result.source_id, bib_raw
+                        )
+                except Exception as e:
+                    logger.warning(
+                        "Citation analysis failed for %s: %s", result.source_id, e
                     )
-                    similar = _parse_biblio_coupling(raw)
-                    logger.info(
-                        "Found %d bibliographically similar papers for '%s'",
-                        len(similar),
-                        result.title[:50],
-                    )
-                except (MCPToolError, RuntimeError) as e:
-                    logger.warning("Biblio coupling failed for %s: %s", result.source_id, e)
 
                 citations.append(
                     CitationInfo(
