@@ -2,7 +2,10 @@
   "query": "How do causal forests estimate heterogeneous treatment effects?",
   "planner": {
     "min_tasks": 2,
-    "expected_concepts": ["causal forest", "heterogeneous treatment effects"],
+    "expected_concepts": [
+      {"name": "causal forest", "aliases": ["causal forests", "generalized random forest", "GRF"]},
+      {"name": "heterogeneous treatment effects", "aliases": ["HTE", "CATE", "treatment effect heterogeneity"]}
+    ],
     "expected_methods": [],
     "min_search_queries": 2
   },

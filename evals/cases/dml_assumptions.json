@@ -2,8 +2,13 @@
   "query": "What are the assumptions of double machine learning?",
   "planner": {
     "min_tasks": 2,
-    "expected_concepts": ["double machine learning", "cross-fitting"],
-    "expected_methods": ["DML"],
+    "expected_concepts": [
+      {"name": "double machine learning", "aliases": ["DML", "debiased ML", "double ML"]},
+      {"name": "cross-fitting", "aliases": ["cross-fit", "sample splitting", "sample-splitting"]}
+    ],
+    "expected_methods": [
+      {"name": "DML", "aliases": ["double machine learning", "debiased ML"]}
+    ],
     "min_search_queries": 2
   },
   "synthesis": {

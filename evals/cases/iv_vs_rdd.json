@@ -2,8 +2,14 @@
   "query": "Compare instrumental variables and regression discontinuity design",
   "planner": {
     "min_tasks": 2,
-    "expected_concepts": ["instrumental variables", "regression discontinuity"],
-    "expected_methods": ["IV", "RDD"],
+    "expected_concepts": [
+      {"name": "instrumental variables", "aliases": ["IV", "instruments", "2SLS", "TSLS"]},
+      {"name": "regression discontinuity", "aliases": ["RDD", "RD design", "sharp RD", "fuzzy RD"]}
+    ],
+    "expected_methods": [
+      {"name": "IV", "aliases": ["instrumental variables", "instruments", "2SLS"]},
+      {"name": "RDD", "aliases": ["regression discontinuity", "RD design"]}
+    ],
     "min_search_queries": 3
   },
   "synthesis": {

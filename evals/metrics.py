@@ -6,37 +6,95 @@ import csv
 import io
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from typing import Any
 
 
-def concept_recall(expected: list[str], actual: list[str]) -> float:
-    """Fraction of expected concepts found in actual (case-insensitive).
+def _any_match(candidates: list[str], actual_lower: list[str], actual_joined: str) -> bool:
+    """Check if any candidate matches any actual value.
+
+    Uses bidirectional substring matching to handle abbreviations:
+    - "DML" matches "double machine learning" (substring of actual)
+    - "double machine learning" matches "DML" (actual is substring of candidate)
 
     Args:
-        expected: Concepts that should appear.
+        candidates: Lowercased candidate strings (name + aliases).
+        actual_lower: Lowercased actual values.
+        actual_joined: Space-joined actual_lower for substring search.
+
+    Returns:
+        True if any candidate matches any actual value.
+    """
+    actual_set = set(actual_lower)
+    for c in candidates:
+        # Exact match
+        if c in actual_set:
+            return True
+        # Candidate is substring of the joined actual string
+        if c in actual_joined:
+            return True
+        # Bidirectional substring: actual is substring of candidate
+        if any(c in a or a in c for a in actual_lower):
+            return True
+    return False
+
+
+def _extract_candidates(entry: str | dict[str, Any]) -> list[str]:
+    """Extract lowercased candidate strings from a plain string or alias dict.
+
+    Args:
+        entry: Either a plain string or {"name": "...", "aliases": [...]}.
+
+    Returns:
+        List of lowercased candidate strings.
+    """
+    if isinstance(entry, str):
+        return [entry.lower()]
+    name = entry.get("name", "")
+    aliases = entry.get("aliases", [])
+    return [name.lower()] + [a.lower() for a in aliases]
+
+
+def concept_recall(expected: list[str | dict[str, Any]], actual: list[str]) -> float:
+    """Fraction of expected concepts found in actual (alias-aware).
+
+    Supports both simple strings and dicts with aliases::
+
+        expected = ["DML"]                                          # simple
+        expected = [{"name": "DML", "aliases": ["double ML"]}]     # with aliases
+
+    Args:
+        expected: Concepts that should appear (strings or alias dicts).
         actual: Concepts that were found.
 
     Returns:
         Recall score in [0.0, 1.0]. Returns 1.0 if expected is empty.
 
     Example:
-        >>> concept_recall(["DML", "cross-fitting"], ["dml", "overlap", "cross-fitting"])
+        >>> concept_recall(
+        ...     [{"name": "double machine learning", "aliases": ["DML"]}],
+        ...     ["DML", "overlap"],
+        ... )
         1.0
     """
     if not expected:
         return 1.0
-    actual_lower = {c.lower() for c in actual}
-    found = sum(1 for c in expected if c.lower() in actual_lower)
+    actual_lower = [c.lower() for c in actual]
+    actual_joined = " ".join(actual_lower)
+    found = sum(
+        1
+        for entry in expected
+        if _any_match(_extract_candidates(entry), actual_lower, actual_joined)
+    )
     return found / len(expected)
 
 
-def method_recall(expected: list[str], actual: list[str]) -> float:
-    """Fraction of expected methods found in actual (case-insensitive, substring-aware).
+def method_recall(expected: list[str | dict[str, Any]], actual: list[str]) -> float:
+    """Fraction of expected methods found in actual (alias-aware, substring-aware).
 
-    Checks both exact match and substring containment to handle
-    abbreviation differences (e.g., "DML" vs "double machine learning").
+    Same alias API as concept_recall for consistency.
 
     Args:
-        expected: Methods that should appear.
+        expected: Methods that should appear (strings or alias dicts).
         actual: Methods that were found.
 
     Returns:
@@ -46,11 +104,11 @@ def method_recall(expected: list[str], actual: list[str]) -> float:
         return 1.0
     actual_lower = [m.lower() for m in actual]
     actual_joined = " ".join(actual_lower)
-    found = 0
-    for m in expected:
-        m_low = m.lower()
-        if m_low in {a for a in actual_lower} or m_low in actual_joined:
-            found += 1
+    found = sum(
+        1
+        for entry in expected
+        if _any_match(_extract_candidates(entry), actual_lower, actual_joined)
+    )
     return found / len(expected)
 
 
