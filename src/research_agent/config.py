@@ -105,5 +105,12 @@ class AgentConfig(BaseSettings):
         alias="MAX_CITATIONS",
         description="Maximum citation chains per source",
     )
+    synthesis_timeout: int = Field(
+        default=120,
+        ge=30,
+        le=300,
+        alias="SYNTHESIS_TIMEOUT",
+        description="Timeout in seconds for synthesis LLM call",
+    )
 
     model_config = {"frozen": True, "populate_by_name": True}

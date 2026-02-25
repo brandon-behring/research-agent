@@ -164,8 +164,9 @@ async def synthesis_writer(state: ResearchState, config: AgentConfig) -> NodeUpd
         temperature=0.1,
     ).with_structured_output(SynthesisReport)
 
+    timeout_s = config.synthesis_timeout
     try:
-        async with asyncio.timeout(60):
+        async with asyncio.timeout(timeout_s):
             result: SynthesisReport = await llm.ainvoke(  # type: ignore[assignment]
                 [
                     SystemMessage(content=SYSTEM_PROMPT),
@@ -175,7 +176,7 @@ async def synthesis_writer(state: ResearchState, config: AgentConfig) -> NodeUpd
                 ]
             )
     except TimeoutError as e:
-        raise SynthesisError("Synthesis timed out after 60s") from e
+        raise SynthesisError(f"Synthesis timed out after {timeout_s}s") from e
     except Exception as e:
         raise SynthesisError(f"Synthesis failed: {e}") from e
 

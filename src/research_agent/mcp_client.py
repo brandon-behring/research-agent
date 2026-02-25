@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import json
 import logging
+from contextlib import AsyncExitStack
 from typing import Any
 
 import httpx
@@ -56,29 +57,47 @@ class ResearchKBClient:
     def __init__(self, config: MCPConfig) -> None:
         self._config = config
         self._session: ClientSession | None = None
-        self._stdio_context: Any = None
-        self._http_context: Any = None
-        self._read: Any = None
-        self._write: Any = None
+        self._stack: AsyncExitStack | None = None
 
     async def __aenter__(self) -> ResearchKBClient:
-        """Connect to the MCP server."""
-        if self._config.transport == "stdio":
-            await self._connect_stdio()
-        elif self._config.transport == "http":
-            await self._connect_http()
-        else:
-            raise MCPConnectionError(f"Unsupported transport: {self._config.transport}")
+        """Connect to the MCP server.
+
+        Uses AsyncExitStack for proper LIFO cleanup ordering:
+        session exits before transport, preventing anyio task group scope errors.
+        """
+        self._stack = AsyncExitStack()
+        await self._stack.__aenter__()
+        try:
+            if self._config.transport == "stdio":
+                await self._connect_stdio()
+            elif self._config.transport == "http":
+                await self._connect_http()
+            else:
+                await self._stack.aclose()
+                raise MCPConnectionError(f"Unsupported transport: {self._config.transport}")
+        except MCPConnectionError:
+            await self._stack.aclose()
+            raise
+        except Exception:
+            await self._stack.aclose()
+            raise
         return self
 
     async def __aexit__(self, *exc: Any) -> None:
-        """Disconnect from the MCP server."""
-        if self._session:
-            await self._session.__aexit__(*exc)
-        if self._stdio_context:
-            await self._stdio_context.__aexit__(*exc)
-        if self._http_context:
-            await self._http_context.__aexit__(*exc)
+        """Disconnect from the MCP server.
+
+        AsyncExitStack ensures session closes before transport (LIFO order).
+
+        The stdio transport uses an anyio task group whose cancel scope can
+        raise RuntimeError during cleanup after the ClientSession's own task
+        group has already exited. This is a known MCP SDK pattern issue --
+        the work is complete by this point, so we log and suppress it.
+        """
+        if self._stack:
+            try:
+                await self._stack.__aexit__(*exc)
+            except (RuntimeError, BaseExceptionGroup) as e:
+                logger.debug("Transport cleanup error (non-fatal): %s", e)
 
     async def _connect_stdio(self) -> None:
         """Establish stdio connection to research-kb server.
@@ -86,6 +105,8 @@ class ResearchKBClient:
         Raises:
             MCPConnectionError: If RESEARCH_KB_PATH is not set or connection fails.
         """
+        assert self._stack is not None
+
         if not self._config.research_kb_path:
             raise MCPConnectionError(
                 "RESEARCH_KB_PATH must be set for stdio transport. "
@@ -99,10 +120,9 @@ class ResearchKBClient:
         )
 
         try:
-            self._stdio_context = stdio_client(server_params)
-            self._read, self._write = await self._stdio_context.__aenter__()
-            self._session = ClientSession(self._read, self._write)
-            await self._session.__aenter__()
+            read, write = await self._stack.enter_async_context(stdio_client(server_params))
+            session = ClientSession(read, write)
+            self._session = await self._stack.enter_async_context(session)
             await self._session.initialize()
             logger.info("Connected to research-kb MCP server via stdio")
         except Exception as e:
@@ -117,6 +137,8 @@ class ResearchKBClient:
         Raises:
             MCPConnectionError: If http_url is empty or connection fails.
         """
+        assert self._stack is not None
+
         if not self._config.http_url:
             raise MCPConnectionError(
                 "RESEARCH_KB_URL must be set for HTTP transport. "
@@ -127,12 +149,11 @@ class ResearchKBClient:
         logger.info("Connecting to research-kb MCP server at %s", url)
 
         try:
-            self._http_context = streamable_http_client(url=url)
-            read_stream, write_stream, _ = await self._http_context.__aenter__()
-            self._read = read_stream
-            self._write = write_stream
-            self._session = ClientSession(self._read, self._write)
-            await self._session.__aenter__()
+            read_stream, write_stream, _ = await self._stack.enter_async_context(
+                streamable_http_client(url=url)
+            )
+            session = ClientSession(read_stream, write_stream)
+            self._session = await self._stack.enter_async_context(session)
             await self._session.initialize()
             logger.info("Connected to research-kb MCP server via HTTP")
         except (httpx.ConnectError, httpx.TimeoutException, httpx.HTTPStatusError, OSError) as e:

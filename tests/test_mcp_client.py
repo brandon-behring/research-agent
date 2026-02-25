@@ -161,6 +161,9 @@ class TestHTTPTransport:
             patch("research_agent.mcp_client.ClientSession") as mock_session_cls,
         ):
             mock_session = AsyncMock()
+            # enter_async_context calls __aenter__, which must return the session
+            mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_session.__aexit__ = AsyncMock(return_value=None)
             mock_session_cls.return_value = mock_session
 
             await client.__aenter__()
@@ -171,17 +174,33 @@ class TestHTTPTransport:
 
     @pytest.mark.asyncio
     async def test_aexit_cleans_up_http_context(self) -> None:
-        """__aexit__ cleans up the HTTP context manager."""
+        """__aexit__ cleans up all context managers via AsyncExitStack."""
         config = MCPConfig(transport="http", http_url="http://localhost:8000")
         client = ResearchKBClient(config)
 
-        # Simulate an established HTTP connection
-        mock_ctx = AsyncMock()
-        mock_ctx.__aexit__ = AsyncMock(return_value=None)
-        client._http_context = mock_ctx
+        mock_read = MagicMock()
+        mock_write = MagicMock()
+        mock_session_id = MagicMock()
 
-        await client.__aexit__(None, None, None)
-        mock_ctx.__aexit__.assert_awaited_once()
+        mock_ctx = AsyncMock()
+        mock_ctx.__aenter__ = AsyncMock(return_value=(mock_read, mock_write, mock_session_id))
+        mock_ctx.__aexit__ = AsyncMock(return_value=None)
+
+        with (
+            patch("research_agent.mcp_client.streamable_http_client", return_value=mock_ctx),
+            patch("research_agent.mcp_client.ClientSession") as mock_session_cls,
+        ):
+            mock_session = AsyncMock()
+            mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_session.__aexit__ = AsyncMock(return_value=None)
+            mock_session_cls.return_value = mock_session
+
+            async with client:
+                pass
+
+            # Both session and transport should be cleaned up
+            mock_session.__aexit__.assert_awaited_once()
+            mock_ctx.__aexit__.assert_awaited_once()
 
     def test_http_url_path_construction(self) -> None:
         """URL is constructed from http_url + mcp_path with proper slash handling."""
