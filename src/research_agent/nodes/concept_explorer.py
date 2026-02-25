@@ -133,9 +133,8 @@ async def concept_explorer(
 ) -> NodeUpdate:
     """Explore concepts in the knowledge graph.
 
-    Fires all graph_neighborhood calls concurrently via asyncio.gather,
-    then sequentially fetches concept details for IDs found in search results
-    (typically 0-2 calls, not worth parallelizing).
+    Fires all graph_neighborhood calls concurrently via asyncio.gather
+    with return_exceptions=True for graceful degradation.
 
     Args:
         state: Current state with sub_tasks and search_results.
@@ -172,25 +171,15 @@ async def concept_explorer(
             # Fan out graph_neighborhood calls concurrently
             neighborhood_results = await asyncio.gather(
                 *[_explore_one(mcp, name) for name in unique_names],
+                return_exceptions=True,
             )
-            concepts = [r for r in neighborhood_results if r is not None]
-
-            # Sequential get_concept for IDs found in search results (typically 0-2)
-            concept_ids_seen: set[str] = set()
-            for result in state.search_results[:5]:  # Top 5 results
-                if result.source_id:
-                    id_pattern = re.compile(r"Concept ID:\s*`([^`]+)`")
-                    for match in id_pattern.finditer(result.content):
-                        cid = match.group(1)
-                        if cid not in concept_ids_seen:
-                            concept_ids_seen.add(cid)
-                            try:
-                                raw = await mcp.get_concept(cid)
-                                parsed = _parse_concept_detail(raw)
-                                if parsed:
-                                    concepts.append(parsed)
-                            except (MCPToolError, RuntimeError) as e:
-                                logger.warning("Failed to get concept %s: %s", cid, e)
+            for i, r in enumerate(neighborhood_results):
+                if isinstance(r, BaseException):
+                    logger.warning(
+                        "Unexpected error exploring '%s': %s", unique_names[i], r
+                    )
+                elif r is not None:
+                    concepts.append(r)
 
     except TimeoutError:
         logger.warning("Concept exploration timed out with %d concepts", len(concepts))

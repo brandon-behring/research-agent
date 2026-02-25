@@ -77,6 +77,25 @@ class TestLiteratureSearch:
         assert "search_summary" in result
         assert "results" in result["search_summary"].lower()
 
+    @pytest.mark.asyncio
+    async def test_gather_exception_degrades_gracefully(
+        self, test_config: AgentConfig, mock_mcp: ResearchKBClient
+    ) -> None:
+        """OSError from gather doesn't crash the node — degrades gracefully."""
+        mock_mcp.search.side_effect = OSError("Connection reset")
+        mock_mcp.fast_search.side_effect = OSError("Connection reset")
+
+        state = ResearchState(
+            query="test",
+            sub_tasks=[
+                SubTask(description="t", search_queries=["q1"]),
+            ],
+        )
+        result = await literature_search(state, test_config, mock_mcp)
+
+        assert "search_results" in result
+        assert "search_summary" in result
+
 
 class TestConceptExplorer:
     """Tests for the concept explorer node."""
@@ -124,6 +143,24 @@ class TestConceptExplorer:
         # Should return empty but not crash
         assert "concepts" in result
         assert "concept_map_summary" in result
+
+    @pytest.mark.asyncio
+    async def test_gather_exception_degrades_gracefully(
+        self, test_config: AgentConfig, mock_mcp: ResearchKBClient
+    ) -> None:
+        """OSError from gather doesn't crash the node — degrades gracefully."""
+        mock_mcp.graph_neighborhood.side_effect = OSError("Connection reset")
+
+        state = ResearchState(
+            query="test",
+            sub_tasks=[
+                SubTask(description="t", concepts_to_explore=["DML"]),
+            ],
+        )
+        result = await concept_explorer(state, test_config, mock_mcp)
+
+        assert "concepts" in result
+        assert len(result["concepts"]) == 0
 
 
 class TestCitationAnalyzer:

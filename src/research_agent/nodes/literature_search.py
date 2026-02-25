@@ -169,10 +169,17 @@ async def literature_search(
         async with asyncio.timeout(90):
             batch_results = await asyncio.gather(
                 *[_bounded_search(q) for q in all_queries],
+                return_exceptions=True,
             )
 
             # Deduplicate across all query results post-gather
-            for parsed, query in batch_results:
+            for i, raw in enumerate(batch_results):
+                if isinstance(raw, BaseException):
+                    logger.warning(
+                        "Unexpected error searching '%s': %s", all_queries[i], raw
+                    )
+                    continue
+                parsed, query = raw
                 for result in parsed:
                     if result.source_id and result.source_id not in seen_source_ids:
                         seen_source_ids.add(result.source_id)
