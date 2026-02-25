@@ -75,7 +75,7 @@ flowchart LR
 
 3. **Separate agent from knowledge base** — Single responsibility: agent orchestrates, KB serves knowledge. Services scale independently.
 
-4. **Haiku for planning, Sonnet for synthesis** — Cost/latency optimization. Fast model for routing decisions, powerful model for final output quality.
+4. **Provider-agnostic model dispatch** — `create_llm()` wraps LangChain's `init_chat_model`, auto-resolving provider from model name. Defaults to Haiku for planning and Sonnet for synthesis. Override with any supported provider prefix (e.g., `ollama/`, `openai/`).
 
 5. **Pydantic BaseModel state** — Richer type support with defaults on every field, validation, and frozen immutability for sub-models. Each node returns a partial dict of updates — LangGraph merges automatically.
 
@@ -146,6 +146,21 @@ cp .env.example .env
 | `CACHE_ENABLED` | `true` | Enable SQLite report cache |
 | `CACHE_DB_PATH` | `~/.cache/research-agent/cache.db` | Path to SQLite cache database |
 | `CACHE_TTL_HOURS` | `24` | Hours before cached reports expire |
+
+### Custom LLM Providers
+
+The agent uses LangChain's `init_chat_model` for provider-agnostic model dispatch.
+Model strings like `claude-sonnet-4-6` auto-resolve to Anthropic.
+To use a different provider, set the model env vars with a provider prefix and install
+the corresponding LangChain integration:
+
+```bash
+export PLANNING_MODEL=ollama/llama3
+export SYNTHESIS_MODEL=openai/gpt-4o
+pip install langchain-ollama  # or langchain-openai
+```
+
+See [LangChain chat model integrations](https://python.langchain.com/docs/integrations/chat/) for the full list of 20+ supported providers.
 
 ### Run
 

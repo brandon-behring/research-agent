@@ -100,8 +100,8 @@ class TestEndToEnd:
         )
 
         with (
-            patch("research_agent.nodes.query_planner.ChatAnthropic") as mock_planner_cls,
-            patch("research_agent.nodes.synthesis.ChatAnthropic") as mock_synth_cls,
+            patch("research_agent.nodes.query_planner.create_llm") as mock_planner_cls,
+            patch("research_agent.nodes.synthesis.create_llm") as mock_synth_cls,
         ):
             # Setup planner mock — with_structured_output returns model directly
             mock_planner = AsyncMock()
@@ -156,8 +156,8 @@ class TestEndToEnd:
         )
 
         with (
-            patch("research_agent.nodes.query_planner.ChatAnthropic") as mock_planner_cls,
-            patch("research_agent.nodes.synthesis.ChatAnthropic") as mock_synth_cls,
+            patch("research_agent.nodes.query_planner.create_llm") as mock_planner_cls,
+            patch("research_agent.nodes.synthesis.create_llm") as mock_synth_cls,
         ):
             mock_planner = AsyncMock()
             mock_planner.ainvoke.return_value = planner_output
@@ -251,8 +251,8 @@ class TestStreamResearch:
         )
 
         with (
-            patch("research_agent.nodes.query_planner.ChatAnthropic") as mock_planner_cls,
-            patch("research_agent.nodes.synthesis.ChatAnthropic") as mock_synth_cls,
+            patch("research_agent.nodes.query_planner.create_llm") as mock_planner_cls,
+            patch("research_agent.nodes.synthesis.create_llm") as mock_synth_cls,
             patch("research_agent.mcp_client.ResearchKBClient.__aenter__", return_value=mock_mcp),
             patch("research_agent.mcp_client.ResearchKBClient.__aexit__", return_value=None),
         ):
@@ -306,8 +306,8 @@ class TestStreamResearch:
         )
 
         with (
-            patch("research_agent.nodes.query_planner.ChatAnthropic") as mock_planner_cls,
-            patch("research_agent.nodes.synthesis.ChatAnthropic") as mock_synth_cls,
+            patch("research_agent.nodes.query_planner.create_llm") as mock_planner_cls,
+            patch("research_agent.nodes.synthesis.create_llm") as mock_synth_cls,
             patch("research_agent.mcp_client.ResearchKBClient.__aenter__", return_value=mock_mcp),
             patch("research_agent.mcp_client.ResearchKBClient.__aexit__", return_value=None),
         ):
@@ -356,8 +356,8 @@ class TestStreamResearch:
         )
 
         with (
-            patch("research_agent.nodes.query_planner.ChatAnthropic") as mock_planner_cls,
-            patch("research_agent.nodes.synthesis.ChatAnthropic") as mock_synth_cls,
+            patch("research_agent.nodes.query_planner.create_llm") as mock_planner_cls,
+            patch("research_agent.nodes.synthesis.create_llm") as mock_synth_cls,
             patch("research_agent.mcp_client.ResearchKBClient.__aenter__", return_value=mock_mcp),
             patch("research_agent.mcp_client.ResearchKBClient.__aexit__", return_value=None),
         ):

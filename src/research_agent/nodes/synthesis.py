@@ -13,12 +13,12 @@ import asyncio
 import logging
 from typing import Literal
 
-from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
 
 from research_agent.config import AgentConfig
 from research_agent.exceptions import SynthesisError
+from research_agent.llm import create_llm
 from research_agent.state import NodeUpdate, ResearchState
 
 logger = logging.getLogger(__name__)
@@ -164,8 +164,8 @@ async def synthesis_writer(state: ResearchState, config: AgentConfig) -> NodeUpd
     evidence = _build_evidence_context(state)
     logger.info("Evidence context: %d chars", len(evidence))
 
-    llm = ChatAnthropic(
-        model=config.models.synthesis,  # type: ignore[call-arg]
+    llm = create_llm(
+        config.models.synthesis,
         max_tokens=4096,
         temperature=0.1,
     ).with_structured_output(SynthesisReport)
@@ -173,7 +173,7 @@ async def synthesis_writer(state: ResearchState, config: AgentConfig) -> NodeUpd
     timeout_s = config.synthesis_timeout
     try:
         async with asyncio.timeout(timeout_s):
-            result: SynthesisReport = await llm.ainvoke(  # type: ignore[assignment]
+            result = await llm.ainvoke(
                 [
                     SystemMessage(content=SYSTEM_PROMPT),
                     HumanMessage(
@@ -181,6 +181,7 @@ async def synthesis_writer(state: ResearchState, config: AgentConfig) -> NodeUpd
                     ),
                 ]
             )
+            assert isinstance(result, SynthesisReport)
     except TimeoutError as e:
         raise SynthesisError(f"Synthesis timed out after {timeout_s}s") from e
     except Exception as e:

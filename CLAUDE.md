@@ -51,7 +51,7 @@ identified in the sub-tasks (`state.py:31` — `SubTask.methods_to_audit`).
 - **Pydantic BaseModel state** (not TypedDict) for richer type support and validation (`state.py:113`)
 - **Closure-injected dependencies** — config and MCP client injected via closure,
   not in graph state (`graph.py:60-92`)
-- **Model tiering** — Haiku for planning, Sonnet for synthesis (`config.py:20-36`)
+- **Provider-agnostic LLM dispatch** — `create_llm()` in `llm.py` wraps `init_chat_model`; model names auto-resolve providers (`config.py:20-36`)
 - **MCP transport abstraction** — stdio (local dev) or HTTP via streamable_http_client (Docker) (`mcp_client.py:52-57`)
 
 ### Source Layout
@@ -63,6 +63,7 @@ src/research_agent/
 ├── config.py           # ModelConfig, MCPConfig, AgentConfig (frozen dataclasses)
 ├── exceptions.py       # ResearchAgentError hierarchy
 ├── graph.py            # LangGraph StateGraph — build_graph() + run_research()
+├── llm.py              # Provider-agnostic LLM factory (init_chat_model wrapper)
 ├── mcp_client.py       # ResearchKBClient — 7-tool MCP wrapper
 ├── state.py            # ResearchState + typed sub-dataclasses
 └── nodes/
