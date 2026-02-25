@@ -28,10 +28,10 @@ from research_agent.state import (
 )
 
 
-def _build_test_state(query: str) -> ResearchState:
-    """Build a realistic state for synthesis testing."""
+def _build_dml_state() -> ResearchState:
+    """Build a realistic state for DML synthesis testing."""
     return ResearchState(
-        query=query,
+        query="What are the assumptions of double machine learning?",
         sub_tasks=[
             SubTask(
                 description="Find foundational papers on DML",
@@ -61,7 +61,7 @@ def _build_test_state(query: str) -> ResearchState:
                 year="2021",
             ),
         ],
-        search_summary="Found 2 results.",
+        search_summary="Found 2 results on DML.",
         concepts=[
             ConceptInfo(
                 concept_id="concept-dml-001",
@@ -81,11 +81,163 @@ def _build_test_state(query: str) -> ResearchState:
     )
 
 
+def _build_iv_rdd_state() -> ResearchState:
+    """Build a realistic state for IV vs RDD comparison synthesis testing."""
+    return ResearchState(
+        query="Compare instrumental variables and regression discontinuity design",
+        sub_tasks=[
+            SubTask(
+                description="Find foundational papers on instrumental variables",
+                search_queries=["instrumental variables"],
+                concepts_to_explore=["instrumental variables"],
+                methods_to_audit=["IV"],
+            ),
+            SubTask(
+                description="Find foundational papers on regression discontinuity",
+                search_queries=["regression discontinuity design"],
+                concepts_to_explore=["regression discontinuity"],
+                methods_to_audit=["RDD"],
+            ),
+        ],
+        planning_rationale="Decomposed into IV and RDD subtasks for comparison.",
+        search_results=[
+            SearchResult(
+                title="Identification and Estimation of Local Average Treatment Effects",
+                content="Instrumental variables exploit exogenous variation to identify "
+                "causal effects under the exclusion restriction. The LATE framework "
+                "identifies effects for compliers when instruments are binary.",
+                source_id="src-010-iv",
+                score=0.94,
+                authors="Angrist and Imbens (1994)",
+                year="1994",
+            ),
+            SearchResult(
+                title="Regression-Discontinuity Analysis",
+                content="Regression discontinuity designs exploit sharp cutoffs in "
+                "treatment assignment. Units just above and below the threshold are "
+                "compared as quasi-experimental groups.",
+                source_id="src-011-rdd",
+                score=0.91,
+                authors="Thistlethwaite and Campbell (1960)",
+                year="1960",
+            ),
+            SearchResult(
+                title="Practical Guide to RDD",
+                content="Bandwidth selection is critical: too narrow loses power, "
+                "too wide introduces bias. McCrary density tests check manipulation.",
+                source_id="src-012-rdd-guide",
+                score=0.85,
+                authors="Imbens and Lemieux (2008)",
+                year="2008",
+            ),
+        ],
+        search_summary="Found 3 results on IV and RDD.",
+        concepts=[
+            ConceptInfo(
+                concept_id="concept-iv-001",
+                name="instrumental variables",
+                concept_type="METHOD",
+                description="Exploits exogenous instruments for causal identification.",
+            ),
+            ConceptInfo(
+                concept_id="concept-rdd-001",
+                name="regression discontinuity",
+                concept_type="METHOD",
+                description="Exploits treatment assignment cutoffs for causal inference.",
+            ),
+        ],
+        concept_map_summary="2 concepts explored: IV, RDD.",
+        assumption_audits=[
+            AssumptionAudit(
+                method_name="IV",
+                raw_output="Assumptions: exclusion restriction, relevance, monotonicity (LATE).",
+            ),
+            AssumptionAudit(
+                method_name="RDD",
+                raw_output="Assumptions: continuity at cutoff, no manipulation, "
+                "bandwidth selection.",
+            ),
+        ],
+        assumption_summary="Audited 2 methods: IV, RDD.",
+    )
+
+
+def _build_causal_forests_state() -> ResearchState:
+    """Build a realistic state for causal forests synthesis testing."""
+    return ResearchState(
+        query="How do causal forests estimate heterogeneous treatment effects?",
+        sub_tasks=[
+            SubTask(
+                description="Find papers on causal forest methodology",
+                search_queries=["causal forest", "heterogeneous treatment effects"],
+                concepts_to_explore=["causal forest", "heterogeneous treatment effects"],
+                methods_to_audit=[],
+            ),
+            SubTask(
+                description="Understand estimation and inference procedures",
+                search_queries=["generalized random forest estimation"],
+                concepts_to_explore=["honest estimation"],
+                methods_to_audit=[],
+            ),
+        ],
+        planning_rationale="Decomposed into methodology and estimation subtasks.",
+        search_results=[
+            SearchResult(
+                title="Estimation and Inference of Heterogeneous Treatment Effects "
+                "using Random Forests",
+                content="Causal forests adapt random forests for treatment effect "
+                "heterogeneity. Honesty — using separate samples for tree construction "
+                "and estimation — enables valid inference.",
+                source_id="src-020-cf",
+                score=0.95,
+                authors="Wager and Athey (2018)",
+                year="2018",
+            ),
+            SearchResult(
+                title="Generalized Random Forests",
+                content="GRF extends causal forests to a general framework for "
+                "heterogeneous estimation. Local moment conditions are solved "
+                "using forest-based adaptive weighting.",
+                source_id="src-021-grf",
+                score=0.90,
+                authors="Athey, Tibshirani, and Wager (2019)",
+                year="2019",
+            ),
+        ],
+        search_summary="Found 2 results on causal forests.",
+        concepts=[
+            ConceptInfo(
+                concept_id="concept-cf-001",
+                name="causal forest",
+                concept_type="METHOD",
+                description="Random forest adapted for heterogeneous treatment effect estimation.",
+            ),
+            ConceptInfo(
+                concept_id="concept-hte-001",
+                name="heterogeneous treatment effects",
+                concept_type="CONCEPT",
+                description="Treatment effects that vary across subpopulations.",
+            ),
+        ],
+        concept_map_summary="2 concepts explored: causal forest, HTE.",
+        assumption_audits=[],
+        assumption_summary="No methods to audit.",
+    )
+
+
+_JUDGE_CASES = [
+    ("dml_assumptions", _build_dml_state),
+    ("iv_vs_rdd", _build_iv_rdd_state),
+    ("causal_forests", _build_causal_forests_state),
+]
+
+
 @requires_api_key
 @pytest.mark.eval
-async def test_synthesis_with_judge() -> None:
-    """Full synthesis + LLM-as-judge grading on DML case."""
-    state = _build_test_state("What are the assumptions of double machine learning?")
+@pytest.mark.parametrize("case_name,build_state", _JUDGE_CASES, ids=[c[0] for c in _JUDGE_CASES])
+async def test_synthesis_with_judge(case_name: str, build_state) -> None:
+    """Full synthesis + LLM-as-judge grading on a golden case."""
+    state = build_state()
 
     config = AgentConfig(
         models=ModelConfig(synthesis="claude-haiku-4-5-20251001"),
@@ -104,7 +256,7 @@ async def test_synthesis_with_judge() -> None:
     verdict = await grade_synthesis(report, evidence)
 
     eval_result = EvalResult(
-        case_name="dml_assumptions",
+        case_name=case_name,
         dimension="synthesis_judge",
         scores={
             "completeness": float(verdict.completeness),
@@ -115,7 +267,7 @@ async def test_synthesis_with_judge() -> None:
         },
     )
 
-    # Minimum thresholds
+    # Minimum thresholds (all dimensions >= 3)
     errors = []
     if verdict.completeness < 3:
         errors.append(f"Low completeness: {verdict.completeness}")
@@ -123,6 +275,8 @@ async def test_synthesis_with_judge() -> None:
         errors.append(f"Low grounding: {verdict.grounding}")
     if verdict.gap_honesty < 3:
         errors.append(f"Low gap_honesty: {verdict.gap_honesty}")
+    if verdict.coherence < 3:
+        errors.append(f"Low coherence: {verdict.coherence}")
 
     if errors:
         eval_result.passed = False
@@ -178,7 +332,7 @@ async def test_synthesis_mentions_dml_terms() -> None:
     Only tests DML case since the test state has DML-specific evidence.
     """
     case = load_golden_case("dml_assumptions")
-    state = _build_test_state(case["query"])
+    state = _build_dml_state()
 
     config = AgentConfig(
         models=ModelConfig(synthesis="claude-haiku-4-5-20251001"),

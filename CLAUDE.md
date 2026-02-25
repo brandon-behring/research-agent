@@ -84,12 +84,6 @@ Seven MCP tools exposed via `ResearchKBClient` (`mcp_client.py:7-14`):
 | `biblio_coupling`  | `research_kb_biblio_coupling`   | Jaccard similarity on shared refs   |
 | `audit_assumptions`| `research_kb_audit_assumptions` | Method assumption documentation     |
 
-## Hub Integration
-
-- Commit format: @~/Claude/lever_of_archimedes/patterns/git.md
-- Testing patterns: @~/Claude/lever_of_archimedes/patterns/testing.md
-- Hooks: lever_of_archimedes/hooks/ (session_start, session_end, user_prompt_submit, pretool_safety_gate)
-
 ## Configuration
 
 Environment variables (see `.env.example`):

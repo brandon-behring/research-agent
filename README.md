@@ -41,7 +41,7 @@ This agent consumes [research-kb](https://github.com/brandonmbehring-dev/researc
 - **307K+ concepts** in a knowledge graph with typed relationships
 - **4-signal hybrid search**: BM25 full-text + BGE-large vectors + graph signals + PageRank citation authority
 - **20 MCP tools** for search, concept exploration, citation analysis, and assumption auditing
-- **2,040+ tests** with comprehensive CI/CD
+- **~2,100+ tests** with comprehensive CI/CD
 
 The agent uses 7 of these tools:
 
@@ -163,7 +163,7 @@ pytest tests/ -v --cov=research_agent --cov-fail-under=80
 RESEARCH_KB_PATH=~/Claude/research-kb ANTHROPIC_API_KEY=sk-... \
     pytest tests/ -m integration -v
 
-# Evals (separate, existing)
+# Evals (separate, LLM-as-judge — see docs/eval_baselines.md)
 pytest evals/ -m eval --timeout=120 -v
 
 # Run specific test module
@@ -188,6 +188,14 @@ src/research_agent/
     ├── assumption_auditor.py # Method assumption documentation
     └── synthesis.py          # Final structured report
 ```
+
+## Eval Baselines
+
+See [docs/eval_baselines.md](docs/eval_baselines.md) for LLM-as-judge scoring methodology, golden case definitions, and reproduction instructions.
+
+## Roadmap
+
+See [ROADMAP.md](ROADMAP.md) for planned improvements including architecture diagrams, persistent session memory, tool-call planning mode, and multi-KB routing.
 
 ## Development
 
