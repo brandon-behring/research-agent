@@ -119,6 +119,24 @@ docker-compose up
 docker-compose run agent "Query here"
 ```
 
+## Demo
+
+[![asciicast](https://asciinema.org/a/vYnTBEbzVoNd9zNs.svg)](https://asciinema.org/a/vYnTBEbzVoNd9zNs)
+
+<details>
+<summary>What happens in the demo</summary>
+
+The agent receives "What are the assumptions of double machine learning?" and:
+1. **Query Planner** (Haiku) decomposes it into 4-5 sub-tasks
+2. **Literature Search** runs hybrid search across 478 sources (~12 results)
+3. **Concept Explorer** traverses the knowledge graph (DML, Neyman orthogonality)
+4. **Citation Analyzer** maps citation networks + bibliographic coupling
+5. **Assumption Auditor** documents method assumptions from the KB
+6. **Synthesis Writer** (Sonnet) produces a structured report with citations
+
+Total time: ~3 minutes. Output: ~15K char report with 7 sections.
+</details>
+
 ## Example Queries
 
 The agent handles any research topic in the knowledge base. Examples:
