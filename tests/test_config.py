@@ -149,3 +149,27 @@ class TestAgentConfig:
             mcp=MCPConfig(transport="http"),
         )
         assert config.mcp.transport == "http"
+
+    def test_cache_defaults(self) -> None:
+        """Default cache settings."""
+        config = AgentConfig()
+        assert config.cache_enabled is True
+        assert config.cache_db_path == "~/.cache/research-agent/cache.db"
+        assert config.cache_ttl_hours == 24.0
+
+    def test_cache_env_var_loading(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Cache fields load from environment variables."""
+        monkeypatch.setenv("CACHE_ENABLED", "false")
+        monkeypatch.setenv("CACHE_DB_PATH", "/tmp/test-cache.db")
+        monkeypatch.setenv("CACHE_TTL_HOURS", "48")
+        config = AgentConfig()
+        assert config.cache_enabled is False
+        assert config.cache_db_path == "/tmp/test-cache.db"
+        assert config.cache_ttl_hours == 48.0
+
+    def test_cache_ttl_bounds(self) -> None:
+        """TTL must be > 0 and <= 720."""
+        with pytest.raises(ValidationError):
+            AgentConfig(cache_ttl_hours=0)
+        with pytest.raises(ValidationError):
+            AgentConfig(cache_ttl_hours=721)

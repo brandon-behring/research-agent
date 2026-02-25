@@ -112,7 +112,7 @@ class TestCLIUnitLevel:
         mock_result = {"report": "# Test Report\n\nFindings here."}
         with (
             patch("research_agent.cli.run_research", new_callable=AsyncMock) as mock_run,
-            patch("sys.argv", ["cli", "What is DML?"]),
+            patch("sys.argv", ["cli", "--no-cache", "What is DML?"]),
             patch("sys.stdout", new_callable=StringIO) as mock_stdout,
         ):
             mock_run.return_value = mock_result
@@ -125,7 +125,10 @@ class TestCLIUnitLevel:
         mock_result = {"report": "# File Report"}
         with (
             patch("research_agent.cli.run_research", new_callable=AsyncMock) as mock_run,
-            patch("sys.argv", ["cli", "--output", str(out_file), "What is DML?"]),
+            patch(
+                "sys.argv",
+                ["cli", "--no-cache", "--output", str(out_file), "What is DML?"],
+            ),
         ):
             mock_run.return_value = mock_result
             main()
@@ -139,7 +142,7 @@ class TestCLIUnitLevel:
                 new_callable=AsyncMock,
                 side_effect=ResearchAgentError("Test error"),
             ),
-            patch("sys.argv", ["cli", "test query"]),
+            patch("sys.argv", ["cli", "--no-cache", "test query"]),
             pytest.raises(SystemExit) as exc_info,
         ):
             main()
@@ -153,7 +156,7 @@ class TestCLIUnitLevel:
                 new_callable=AsyncMock,
                 side_effect=ValueError("Unexpected"),
             ),
-            patch("sys.argv", ["cli", "test query"]),
+            patch("sys.argv", ["cli", "--no-cache", "test query"]),
             pytest.raises(SystemExit) as exc_info,
         ):
             main()
@@ -167,7 +170,7 @@ class TestCLIUnitLevel:
                 new_callable=AsyncMock,
                 side_effect=KeyboardInterrupt(),
             ),
-            patch("sys.argv", ["cli", "test query"]),
+            patch("sys.argv", ["cli", "--no-cache", "test query"]),
             pytest.raises(SystemExit) as exc_info,
         ):
             main()
@@ -178,7 +181,7 @@ class TestCLIUnitLevel:
         mock_result = {"report": "Report"}
         with (
             patch("research_agent.cli.run_research", new_callable=AsyncMock) as mock_run,
-            patch("sys.argv", ["cli", "--verbose", "test"]),
+            patch("sys.argv", ["cli", "--no-cache", "--verbose", "test"]),
             patch("logging.basicConfig") as mock_log_config,
             patch("sys.stdout", new_callable=StringIO),
         ):
@@ -196,7 +199,7 @@ class TestCLIUnitLevel:
                 "research_agent.cli._run_streaming",
                 new_callable=AsyncMock,
             ) as mock_stream,
-            patch("sys.argv", ["cli", "--stream", "test query"]),
+            patch("sys.argv", ["cli", "--no-cache", "--stream", "test query"]),
             patch("sys.stdout", new_callable=StringIO) as mock_stdout,
         ):
             mock_stream.return_value = mock_result

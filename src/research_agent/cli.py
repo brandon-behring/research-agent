@@ -3,19 +3,59 @@
 Usage:
     research-agent "What are the assumptions of double machine learning?"
     research-agent --verbose -o report.md "Compare DML and IV"
+    research-agent --clear-cache
 """
 
 from __future__ import annotations
 
 import argparse
 import asyncio
+import json
 import logging
 import sys
 from pathlib import Path
+from typing import Any
 
+from research_agent.cache import ReportCache, compute_cache_key
 from research_agent.config import AgentConfig
 from research_agent.exceptions import ResearchAgentError
 from research_agent.graph import run_research, stream_research
+
+
+def _extract_metadata(result: dict[str, Any]) -> dict[str, Any]:
+    """Extract cache metadata from pipeline result.
+
+    Uses getattr for safe access — works with both Pydantic models
+    (real pipeline) and plain dicts (tests).
+
+    Args:
+        result: Final state dict from run_research().
+
+    Returns:
+        Dict with source_count, concept_names, methods_audited.
+    """
+    return {
+        "source_count": len(result.get("search_results", [])),
+        "concept_names": [getattr(c, "name", "") for c in result.get("concepts", [])],
+        "methods_audited": [
+            getattr(a, "method_name", "") for a in result.get("assumption_audits", [])
+        ],
+    }
+
+
+def _output_report(report: str, args: argparse.Namespace) -> None:
+    """Write report to file or stdout.
+
+    Args:
+        report: Report text to output.
+        args: Parsed CLI arguments (checks args.output).
+    """
+    if args.output:
+        with open(args.output, "w") as f:
+            f.write(report)
+        print(f"Report written to {args.output}", file=sys.stderr)
+    else:
+        print(report)
 
 
 async def _run_streaming(query: str, config: AgentConfig) -> dict[str, str]:
@@ -53,6 +93,8 @@ def main() -> None:
     )
     parser.add_argument(
         "query",
+        nargs="?",
+        default="",
         help="Research question to analyze",
     )
     parser.add_argument(
@@ -72,17 +114,18 @@ def main() -> None:
         action="store_true",
         help="Stream progress events to stderr as pipeline executes",
     )
+    parser.add_argument(
+        "--no-cache",
+        action="store_true",
+        help="Bypass report cache for this query",
+    )
+    parser.add_argument(
+        "--clear-cache",
+        action="store_true",
+        help="Clear all cached reports and exit",
+    )
 
     args = parser.parse_args()
-
-    # Validate inputs
-    if not args.query.strip():
-        parser.error("Query must not be empty.")
-
-    if args.output:
-        output_path = Path(args.output)
-        if not output_path.parent.exists():
-            parser.error(f"Output directory does not exist: {output_path.parent}")
 
     # Configure logging
     level = logging.DEBUG if args.verbose else logging.INFO
@@ -92,30 +135,90 @@ def main() -> None:
         stream=sys.stderr,
     )
 
+    config = AgentConfig()
+
+    # Handle --clear-cache early exit (no query required)
+    if args.clear_cache:
+        db_path = Path(config.cache_db_path).expanduser()
+        cache = ReportCache(db_path, config.cache_ttl_hours)
+        count = cache.clear()
+        print(f"Cleared {count} cached reports.", file=sys.stderr)
+        cache.close()
+        return
+
+    # Validate inputs (after --clear-cache which doesn't need a query)
+    if not args.query or not args.query.strip():
+        parser.error("Query must not be empty.")
+
+    if args.output:
+        output_path = Path(args.output)
+        if not output_path.parent.exists():
+            parser.error(f"Output directory does not exist: {output_path.parent}")
+
+    # ── Cache lookup ──────────────────────────────────────────────────
+    cache: ReportCache | None = None
+    cache_key: str | None = None
+    if config.cache_enabled and not args.no_cache:
+        db_path = Path(config.cache_db_path).expanduser()
+        cache = ReportCache(db_path, config.cache_ttl_hours)
+        cache_key = compute_cache_key(
+            args.query,
+            config.max_search_results,
+            config.max_concepts,
+            config.max_citations,
+            config.models.synthesis,
+        )
+        entry = cache.get(cache_key)
+        if entry is not None:
+            print("[cached]", file=sys.stderr)
+            _output_report(entry.report, args)
+            cache.close()
+            return
+
+    # ── Run pipeline ──────────────────────────────────────────────────
     try:
-        config = AgentConfig()
         if args.stream:
             result = asyncio.run(_run_streaming(args.query, config))
         else:
             result = asyncio.run(run_research(args.query, config))
     except ResearchAgentError as e:
+        if cache:
+            cache.close()
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
     except KeyboardInterrupt:
+        if cache:
+            cache.close()
         print("\nInterrupted.", file=sys.stderr)
         sys.exit(130)
     except Exception as e:
+        if cache:
+            cache.close()
         print(f"Unexpected error: {e}", file=sys.stderr)
         sys.exit(2)
 
     report = result.get("report", "No report generated.")
 
-    if args.output:
-        with open(args.output, "w") as f:
-            f.write(report)
-        print(f"Report written to {args.output}", file=sys.stderr)
-    else:
-        print(report)
+    # ── Cache write ───────────────────────────────────────────────────
+    if cache is not None and cache_key is not None:
+        metadata = _extract_metadata(result)
+        config_summary = {
+            "max_search_results": config.max_search_results,
+            "max_concepts": config.max_concepts,
+            "max_citations": config.max_citations,
+            "synthesis_model": config.models.synthesis,
+        }
+        cache.put(
+            cache_key,
+            args.query,
+            report,
+            json.dumps(metadata),
+            json.dumps(config_summary),
+        )
+        cache.evict_expired()
+        cache.close()
+
+    _output_report(report, args)
 
 
 if __name__ == "__main__":

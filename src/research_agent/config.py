@@ -112,5 +112,22 @@ class AgentConfig(BaseSettings):
         alias="SYNTHESIS_TIMEOUT",
         description="Timeout in seconds for synthesis LLM call",
     )
+    cache_enabled: bool = Field(
+        default=True,
+        alias="CACHE_ENABLED",
+        description="Enable SQLite report cache",
+    )
+    cache_db_path: str = Field(
+        default="~/.cache/research-agent/cache.db",
+        alias="CACHE_DB_PATH",
+        description="Path to SQLite cache database",
+    )
+    cache_ttl_hours: float = Field(
+        default=24.0,
+        gt=0.0,
+        le=720.0,
+        alias="CACHE_TTL_HOURS",
+        description="Hours before cached reports expire",
+    )
 
     model_config = {"frozen": True, "populate_by_name": True}

@@ -10,11 +10,9 @@ Near-term and medium-term improvements for the research-agent pipeline.
 
 Added two Mermaid diagrams to README.md: pipeline flow with model-tier coloring and conditional routing, plus per-node MCP tool mapping.
 
-### Persistent Session Memory
+### ~~Persistent Session Memory~~ *(completed)*
 
-SQLite-backed cache keyed on query hash. Repeated or similar queries skip the full pipeline and return cached reports. Includes TTL-based invalidation when the knowledge base is updated.
-
-**Design**: `(query_hash, timestamp, report_json)` table. Hash includes config parameters (model, max_results) to avoid stale cache hits across config changes.
+SQLite-backed cache keyed on query hash + config parameters (model, limits). Repeated queries skip the full pipeline and return cached reports in milliseconds. TTL-based invalidation (default 24h) with `--clear-cache` for manual refresh. `--no-cache` flag bypasses cache for a single query.
 
 ---
 
