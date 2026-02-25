@@ -23,6 +23,12 @@ from research_agent.state import NodeUpdate, ResearchState
 
 logger = logging.getLogger(__name__)
 
+# Maximum search results included in the synthesis context window.
+_MAX_SEARCH_RESULTS_IN_CONTEXT = 15
+
+# Maximum citation entries per source included in the synthesis context.
+_MAX_CITATIONS_IN_CONTEXT = 5
+
 SYSTEM_PROMPT = """You are a research synthesis expert. Given the gathered evidence from a
 multi-agent research system, produce a structured report.
 
@@ -91,7 +97,7 @@ def _build_evidence_context(state: ResearchState) -> str:
     # Search results
     if state.search_results:
         search_lines = [f"## Literature Search ({len(state.search_results)} results)"]
-        for i, r in enumerate(state.search_results[:15], 1):
+        for i, r in enumerate(state.search_results[:_MAX_SEARCH_RESULTS_IN_CONTEXT], 1):
             search_lines.append(
                 f"\n### Result {i}: {r.title}\n"
                 f"Authors: {r.authors}\nYear: {r.year}\n"
@@ -116,15 +122,15 @@ def _build_evidence_context(state: ResearchState) -> str:
             cite_lines.append(f"\n### {cit.source_title}")
             if cit.citing:
                 cite_lines.append(f"Citing ({len(cit.citing)}):")
-                for ref in cit.citing[:5]:
+                for ref in cit.citing[:_MAX_CITATIONS_IN_CONTEXT]:
                     cite_lines.append(f"  - {ref.get('title', 'Unknown')} ({ref.get('year', '?')})")
             if cit.cited_by:
                 cite_lines.append(f"Cited by ({len(cit.cited_by)}):")
-                for ref in cit.cited_by[:5]:
+                for ref in cit.cited_by[:_MAX_CITATIONS_IN_CONTEXT]:
                     cite_lines.append(f"  - {ref.get('title', 'Unknown')} ({ref.get('year', '?')})")
             if cit.similar_papers:
                 cite_lines.append(f"Similar papers ({len(cit.similar_papers)}):")
-                for p in cit.similar_papers[:5]:
+                for p in cit.similar_papers[:_MAX_CITATIONS_IN_CONTEXT]:
                     cite_lines.append(
                         f"  - {p.get('title', 'Unknown')} ({p.get('coupling_pct', 0):.0f}% overlap)"
                     )

@@ -18,6 +18,15 @@ from research_agent.state import ConceptInfo, NodeUpdate, ResearchState
 
 logger = logging.getLogger(__name__)
 
+# Timeout for all graph_neighborhood calls combined.
+_EXPLORATION_TIMEOUT_SECONDS = 45
+
+# Default hops for graph_neighborhood traversal.
+_DEFAULT_HOPS = 2
+
+# Default neighbor limit per concept.
+_DEFAULT_NEIGHBOR_LIMIT = 30
+
 
 def _parse_concept_detail(markdown: str) -> ConceptInfo | None:
     """Parse a concept detail response into ConceptInfo.
@@ -112,12 +121,20 @@ async def _explore_one(
     try:
         raw = await mcp.graph_neighborhood(
             concept_name=name,
-            hops=2,
-            limit=30,
+            hops=_DEFAULT_HOPS,
+            limit=_DEFAULT_NEIGHBOR_LIMIT,
         )
         logger.info("Explored neighborhood for concept: %s", name)
+
+        # Extract concept_id from neighborhood header if present
+        # Format: *Type: METHOD | ID: `concept-dml-001`*
+        concept_id = ""
+        id_match = re.search(r"ID:\s*`([^`]+)`", raw)
+        if id_match:
+            concept_id = id_match.group(1)
+
         return ConceptInfo(
-            concept_id="",
+            concept_id=concept_id,
             name=name,
             neighborhood_summary=raw,
         )
@@ -167,7 +184,7 @@ async def concept_explorer(
     concepts: list[ConceptInfo] = []
 
     try:
-        async with asyncio.timeout(45):
+        async with asyncio.timeout(_EXPLORATION_TIMEOUT_SECONDS):
             # Fan out graph_neighborhood calls concurrently
             neighborhood_results = await asyncio.gather(
                 *[_explore_one(mcp, name) for name in unique_names],

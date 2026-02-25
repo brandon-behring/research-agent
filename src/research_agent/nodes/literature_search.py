@@ -20,7 +20,13 @@ from research_agent.state import NodeUpdate, ResearchState, SearchResult
 
 logger = logging.getLogger(__name__)
 
-# Minimum results from primary search before triggering fast_search supplement
+# Timeout for the entire search operation across all queries.
+_SEARCH_TIMEOUT_SECONDS = 90
+
+# Max concurrent search requests — research-kb's connection pool maxes at ~10.
+_CONCURRENCY_LIMIT = 3
+
+# Minimum results from primary search before triggering fast_search supplement.
 _MIN_SPARSE_THRESHOLD = 2
 
 
@@ -178,16 +184,14 @@ async def literature_search(
     all_results: list[SearchResult] = []
     seen_source_ids: set[str] = set()
 
-    # Limit concurrency to avoid saturating research-kb's connection pool.
-    # Each search uses multiple DB operations (BM25 + vector + graph + citation).
-    sem = asyncio.Semaphore(3)
+    sem = asyncio.Semaphore(_CONCURRENCY_LIMIT)
 
     async def _bounded_search(q: str) -> tuple[list[SearchResult], str]:
         async with sem:
             return await _search_one(mcp, q, config)
 
     try:
-        async with asyncio.timeout(90):
+        async with asyncio.timeout(_SEARCH_TIMEOUT_SECONDS):
             batch_results = await asyncio.gather(
                 *[_bounded_search(q) for q in all_queries],
                 return_exceptions=True,
@@ -210,7 +214,11 @@ async def literature_search(
                 logger.info("Query '%s': found %d results", query, len(parsed))
 
     except TimeoutError as e:
-        logger.warning("Literature search timed out after 90s with %d results", len(all_results))
+        logger.warning(
+            "Literature search timed out after %ds with %d results",
+            _SEARCH_TIMEOUT_SECONDS,
+            len(all_results),
+        )
         if not all_results:
             raise SearchError("Literature search timed out with no results") from e
 

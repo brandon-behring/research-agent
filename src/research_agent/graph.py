@@ -27,6 +27,7 @@ from langgraph.graph import END, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
 from research_agent.config import AgentConfig
+from research_agent.exceptions import PlannerError
 from research_agent.mcp_client import ResearchKBClient
 from research_agent.nodes.assumption_auditor import assumption_auditor
 from research_agent.nodes.citation_analyzer import citation_analyzer
@@ -133,6 +134,9 @@ async def run_research(query: str, config: AgentConfig | None = None) -> dict[st
     Returns:
         Final state dict with report and all intermediate results.
     """
+    if not query or not query.strip():
+        raise PlannerError("Query must not be empty.")
+
     if config is None:
         config = AgentConfig()
 
@@ -210,6 +214,9 @@ async def stream_research(
         StreamEvent instances: node_end for each node, report_chunk for the
         final report, and complete as the terminal event.
     """
+    if not query or not query.strip():
+        raise PlannerError("Query must not be empty.")
+
     if config is None:
         config = AgentConfig()
 

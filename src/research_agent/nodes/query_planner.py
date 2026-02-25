@@ -23,6 +23,9 @@ from research_agent.state import NodeUpdate, ResearchState, SubTask
 
 logger = logging.getLogger(__name__)
 
+# Timeout for the planner LLM call — planning is a routing step, should be fast.
+_PLANNER_TIMEOUT_SECONDS = 30
+
 SYSTEM_PROMPT = """You are a research query planner. Given a research question, decompose it
 into concrete sub-tasks for a multi-agent research system.
 
@@ -74,7 +77,7 @@ async def query_planner(state: ResearchState, config: AgentConfig) -> NodeUpdate
     ).with_structured_output(PlannerOutput)
 
     try:
-        async with asyncio.timeout(30):
+        async with asyncio.timeout(_PLANNER_TIMEOUT_SECONDS):
             result: PlannerOutput = await llm.ainvoke(  # type: ignore[assignment]
                 [
                     SystemMessage(content=SYSTEM_PROMPT),
@@ -82,7 +85,9 @@ async def query_planner(state: ResearchState, config: AgentConfig) -> NodeUpdate
                 ]
             )
     except TimeoutError as e:
-        raise PlannerError(f"Query planning timed out after 30s for: {state.query}") from e
+        raise PlannerError(
+            f"Query planning timed out after {_PLANNER_TIMEOUT_SECONDS}s for: {state.query}"
+        ) from e
     except Exception as e:
         raise PlannerError(f"Query planning failed: {e}") from e
 

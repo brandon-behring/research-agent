@@ -17,6 +17,9 @@ from research_agent.state import AssumptionAudit, NodeUpdate, ResearchState
 
 logger = logging.getLogger(__name__)
 
+# Timeout for all assumption audit calls combined.
+_AUDIT_TIMEOUT_SECONDS = 45
+
 
 async def assumption_auditor(
     state: ResearchState,
@@ -49,7 +52,7 @@ async def assumption_auditor(
     audits: list[AssumptionAudit] = []
 
     try:
-        async with asyncio.timeout(45):
+        async with asyncio.timeout(_AUDIT_TIMEOUT_SECONDS):
             # Fan out all audit calls concurrently
             raw_results = await asyncio.gather(
                 *[

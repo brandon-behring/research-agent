@@ -17,6 +17,12 @@ from research_agent.state import CitationInfo, NodeUpdate, ResearchState
 
 logger = logging.getLogger(__name__)
 
+# Timeout for all citation analysis (network + biblio coupling).
+_CITATION_TIMEOUT_SECONDS = 45
+
+# Maximum search results to analyze for citation networks.
+_TOP_RESULTS_LIMIT = 5
+
 
 def _parse_citation_network(markdown: str) -> tuple[list[dict[str, str]], list[dict[str, str]]]:
     """Parse citation network markdown into citing/cited-by lists.
@@ -178,10 +184,10 @@ async def citation_analyzer(
     analyzed_ids: set[str] = set()
 
     # Analyze top search results by score
-    top_results = [r for r in state.search_results if r.source_id][:5]
+    top_results = [r for r in state.search_results if r.source_id][:_TOP_RESULTS_LIMIT]
 
     try:
-        async with asyncio.timeout(45):
+        async with asyncio.timeout(_CITATION_TIMEOUT_SECONDS):
             for result in top_results:
                 if result.source_id in analyzed_ids:
                     continue
