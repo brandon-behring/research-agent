@@ -40,6 +40,30 @@ class TestMCPClientConfig:
             asyncio.run(client.search("test query"))
 
 
+class TestCustomPythonPath:
+    """Tests for RESEARCH_KB_PYTHON configuration."""
+
+    def test_custom_python_path_env_var(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """RESEARCH_KB_PYTHON env var overrides default venv/bin/python."""
+        monkeypatch.setenv("RESEARCH_KB_PYTHON", "/usr/bin/python3")
+        config = MCPConfig(transport="stdio", research_kb_path="/fake/path")
+        assert config.research_kb_python == "/usr/bin/python3"
+
+    def test_custom_python_path_constructor(self) -> None:
+        """Constructor override for research_kb_python."""
+        config = MCPConfig(
+            transport="stdio",
+            research_kb_path="/fake/path",
+            research_kb_python="/opt/conda/bin/python",
+        )
+        assert config.research_kb_python == "/opt/conda/bin/python"
+
+    def test_default_python_path_empty(self) -> None:
+        """Default research_kb_python is empty string."""
+        config = MCPConfig(transport="stdio", research_kb_path="/fake/path")
+        assert config.research_kb_python == ""
+
+
 class TestMCPClientInterface:
     """Test that all 7 tool methods have correct signatures."""
 

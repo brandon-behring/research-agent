@@ -96,6 +96,26 @@ class TestLiteratureSearch:
         assert "search_results" in result
         assert "search_summary" in result
 
+    @pytest.mark.asyncio
+    async def test_sparse_result_triggers_fast_search_supplement(
+        self, test_config: AgentConfig, mock_mcp: ResearchKBClient
+    ) -> None:
+        """When primary search returns < _MIN_SPARSE_THRESHOLD, fast_search supplements."""
+        # Return only 1 result from primary search (below threshold of 2)
+        mock_mcp.search.return_value = """### 1. Only Paper
+*Score: 0.9*
+*Source ID: `src-only`*
+"""
+        state = ResearchState(
+            query="test",
+            sub_tasks=[SubTask(description="t", search_queries=["sparse query"])],
+        )
+        result = await literature_search(state, test_config, mock_mcp)
+
+        # fast_search should have been called to supplement
+        assert mock_mcp.fast_search.call_count >= 1
+        assert "search_results" in result
+
 
 class TestConceptExplorer:
     """Tests for the concept explorer node."""

@@ -2,7 +2,9 @@
 
 Runs all search queries from the planner's sub-tasks, collecting results
 into a deduplicated list. Uses hybrid search (primary) with fast_search
-fallback if the main search returns sparse results.
+fallback in two scenarios:
+    1. Primary search raises an exception (MCPToolError, RuntimeError)
+    2. Primary search returns fewer than ``_MIN_SPARSE_THRESHOLD`` results
 """
 
 from __future__ import annotations
@@ -17,6 +19,9 @@ from research_agent.mcp_client import ResearchKBClient
 from research_agent.state import NodeUpdate, ResearchState, SearchResult
 
 logger = logging.getLogger(__name__)
+
+# Minimum results from primary search before triggering fast_search supplement
+_MIN_SPARSE_THRESHOLD = 2
 
 
 def _parse_search_results(markdown: str) -> list[SearchResult]:
@@ -121,7 +126,23 @@ async def _search_one(
             limit=config.max_search_results,
             context_type="balanced",
         )
-        return _parse_search_results(raw), query
+        results = _parse_search_results(raw)
+
+        # Sparse-result fallback: supplement with fast_search if too few results
+        if len(results) < _MIN_SPARSE_THRESHOLD:
+            logger.info(
+                "Sparse results for '%s' (%d < %d), supplementing with fast_search",
+                query,
+                len(results),
+                _MIN_SPARSE_THRESHOLD,
+            )
+            try:
+                fast_raw = await mcp.fast_search(query=query, limit=5)
+                results.extend(_parse_search_results(fast_raw))
+            except (MCPToolError, RuntimeError) as e2:
+                logger.warning("Fast search supplement failed for '%s': %s", query, e2)
+
+        return results, query
     except (MCPToolError, RuntimeError) as e:
         logger.error("Search failed for '%s': %s", query, e)
         try:

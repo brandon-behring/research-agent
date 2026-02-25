@@ -113,8 +113,12 @@ class ResearchKBClient:
                 "Point it to the research-kb repository root."
             )
 
+        python_cmd = (
+            self._config.research_kb_python
+            or f"{self._config.research_kb_path}/venv/bin/python"
+        )
         server_params = StdioServerParameters(
-            command=f"{self._config.research_kb_path}/venv/bin/python",
+            command=python_cmd,
             args=["-m", "research_kb_mcp.server"],
             cwd=self._config.research_kb_path,
         )

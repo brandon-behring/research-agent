@@ -71,6 +71,11 @@ class MCPConfig(BaseSettings):
         alias="MCP_PATH",
         description="MCP endpoint path appended to http_url",
     )
+    research_kb_python: str = Field(
+        default="",
+        alias="RESEARCH_KB_PYTHON",
+        description="Path to Python executable for stdio transport (default: {research_kb_path}/venv/bin/python)",
+    )
 
     model_config = {"frozen": True, "populate_by_name": True}
 
