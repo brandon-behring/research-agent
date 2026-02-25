@@ -31,7 +31,7 @@ User Question
 
 4. **Haiku for planning, Sonnet for synthesis** — Cost/latency optimization. Fast model for routing decisions, powerful model for final output quality.
 
-5. **TypedDict-free state (dataclass)** — Richer type support with defaults on every field. Each node returns a partial dict of updates — LangGraph merges automatically.
+5. **Pydantic BaseModel state** — Richer type support with defaults on every field, validation, and frozen immutability for sub-models. Each node returns a partial dict of updates — LangGraph merges automatically.
 
 ## Built on research-kb
 
@@ -93,6 +93,7 @@ cp .env.example .env
 | `MCP_TRANSPORT` | `stdio` | `stdio` (local) or `http` (Docker) |
 | `RESEARCH_KB_PATH` | | Path to research-kb repo (stdio mode) |
 | `RESEARCH_KB_URL` | `http://research-kb:8000` | HTTP endpoint (Docker mode) |
+| `RESEARCH_KB_PYTHON` | | Python executable for stdio transport (default: `{RESEARCH_KB_PATH}/venv/bin/python`) |
 | `MCP_PATH` | `/mcp` | MCP endpoint path appended to HTTP URL |
 
 ### Run
@@ -176,7 +177,7 @@ pytest tests/test_nodes.py -v
 src/research_agent/
 ├── __init__.py
 ├── graph.py              # LangGraph StateGraph + conditional edges
-├── state.py              # Dataclass state schema
+├── state.py              # Pydantic state schema
 ├── config.py             # Model selection, MCP endpoint config
 ├── mcp_client.py         # Thin wrapper calling research-kb MCP tools
 ├── cli.py                # CLI entry point

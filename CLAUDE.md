@@ -46,7 +46,7 @@ identified in the sub-tasks (`state.py:31` — `SubTask.methods_to_audit`).
 
 ### Design Decisions
 
-- **Dataclass state** (not TypedDict) for richer type support (`state.py:113`)
+- **Pydantic BaseModel state** (not TypedDict) for richer type support and validation (`state.py:113`)
 - **Closure-injected dependencies** — config and MCP client injected via closure,
   not in graph state (`graph.py:60-92`)
 - **Model tiering** — Haiku for planning, Sonnet for synthesis/analysis (`config.py:20-40`)
