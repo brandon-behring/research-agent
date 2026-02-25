@@ -9,6 +9,8 @@ Multi-agent research analysis system powered by [LangGraph](https://github.com/l
 
 Given a research question, the agent decomposes it into sub-tasks, searches a knowledge base, explores concept graphs, analyzes citation networks, audits method assumptions, and produces a structured synthesis report.
 
+**Project History:** This repository is an open-source extraction of a multi-agent research workflow developed for internal use. It was modularized, upgraded with strict typing and evals, and published in February 2026 to demonstrate LangGraph + MCP orchestration patterns.
+
 ## Architecture
 
 ### Pipeline Flow
@@ -77,6 +79,8 @@ flowchart LR
 
 5. **Pydantic BaseModel state** — Richer type support with defaults on every field, validation, and frozen immutability for sub-models. Each node returns a partial dict of updates — LangGraph merges automatically.
 
+6. **Auditable Logic over Prompt Chaining** — Conditional routing ensures the LLM doesn't hallucinate methodological assumptions; it explicitly audits them against the knowledge graph. This provides a deterministic, verifiable research pipeline.
+
 ## Built on research-kb
 
 This agent consumes [research-kb](https://github.com/brandonmbehring-dev/research-kb), a production knowledge base system I built with:
@@ -139,6 +143,9 @@ cp .env.example .env
 | `RESEARCH_KB_URL` | `http://research-kb:8000` | HTTP endpoint (Docker mode) |
 | `RESEARCH_KB_PYTHON` | | Python executable for stdio transport (default: `{RESEARCH_KB_PATH}/venv/bin/python`) |
 | `MCP_PATH` | `/mcp` | MCP endpoint path appended to HTTP URL |
+| `CACHE_ENABLED` | `true` | Enable SQLite report cache |
+| `CACHE_DB_PATH` | `~/.cache/research-agent/cache.db` | Path to SQLite cache database |
+| `CACHE_TTL_HOURS` | `24` | Hours before cached reports expire |
 
 ### Run
 
@@ -154,6 +161,12 @@ research-agent --stream "What are the assumptions of DML?"
 
 # Save report to file
 research-agent -o report.md "How does cross-fitting reduce bias?"
+
+# Bypass cache for a fresh run
+research-agent --no-cache "What are the assumptions of DML?"
+
+# Clear all cached reports
+research-agent --clear-cache
 ```
 
 ### Docker (HTTP transport)
@@ -223,6 +236,7 @@ src/research_agent/
 ├── graph.py              # LangGraph StateGraph + conditional edges
 ├── state.py              # Pydantic state schema
 ├── config.py             # Model selection, MCP endpoint config
+├── cache.py              # SQLite report cache (query hash + TTL)
 ├── mcp_client.py         # Thin wrapper calling research-kb MCP tools
 ├── cli.py                # CLI entry point
 └── nodes/

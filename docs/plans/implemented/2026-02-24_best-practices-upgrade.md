@@ -24,6 +24,5 @@
 
 ## Baseline
 
-- 33 tests passing
-- ~1,550 LOC
-- No type checker, no lock file, no evals
+- 33 tests passing, ~1,550 LOC
+- Upgraded to: strict mypy, uv lock file, LLM-as-judge eval suite
