@@ -15,6 +15,10 @@ COPY src/ src/
 # Install the package via uv
 RUN uv pip install --system .
 
+# Run as non-root user
+RUN useradd --create-home agent
+USER agent
+
 # Default command: run the CLI
 ENTRYPOINT ["research-agent"]
 CMD ["--help"]

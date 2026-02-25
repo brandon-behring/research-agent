@@ -26,6 +26,7 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 
@@ -53,6 +54,11 @@ dev = [
 
 [project.scripts]
 research-agent = "research_agent.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/brandonmbehring-dev/research-agent"
+Repository = "https://github.com/brandonmbehring-dev/research-agent.git"
+"Bug Tracker" = "https://github.com/brandonmbehring-dev/research-agent/issues"
 
 [tool.ruff]
 line-length = 100

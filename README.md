@@ -1,6 +1,9 @@
 # research-agent
 
-![CI](https://github.com/brandonmbehring-dev/research-agent/actions/workflows/ci.yml/badge.svg)
+[![CI](https://github.com/brandonmbehring-dev/research-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/brandonmbehring-dev/research-agent/actions/workflows/ci.yml)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://python.org)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://docs.astral.sh/ruff/)
 
 Multi-agent research analysis system powered by [LangGraph](https://github.com/langchain-ai/langgraph) and the [Model Context Protocol (MCP)](https://modelcontextprotocol.io/).
 
@@ -65,6 +68,11 @@ The agent uses 7 of these tools:
 ```bash
 git clone https://github.com/brandonmbehring-dev/research-agent.git
 cd research-agent
+
+# Option A: uv (recommended — matches CI)
+uv sync --extra dev
+
+# Option B: pip
 python -m venv venv
 source venv/bin/activate
 pip install -e ".[dev]"
@@ -161,6 +169,23 @@ src/research_agent/
     ├── citation_analyzer.py  # Citation networks + biblio coupling
     ├── assumption_auditor.py # Method assumption documentation
     └── synthesis.py          # Final structured report
+```
+
+## Development
+
+```bash
+# Install with dev dependencies
+uv sync --extra dev
+
+# Run tests
+uv run pytest tests/ -v --cov=research_agent
+
+# Lint + format
+uv run ruff check src/ tests/
+uv run ruff format src/ tests/
+
+# Type check
+uv run mypy src/
 ```
 
 ## License
