@@ -191,11 +191,11 @@ class ReportCache:
             logger.warning("Cache get failed for key %s: %s", cache_key, e)
             # Delete corrupt entry so it doesn't persist until TTL
             with contextlib.suppress(sqlite3.Error):
-                self._conn.execute(  # type: ignore[union-attr]
+                self._conn.execute(
                     "DELETE FROM report_cache WHERE cache_key = ?",
                     (cache_key,),
                 )
-                self._conn.commit()  # type: ignore[union-attr]
+                self._conn.commit()
             return None
 
     def put(
