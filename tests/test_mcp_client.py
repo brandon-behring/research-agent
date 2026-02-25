@@ -1,19 +1,20 @@
 """Tests for MCP client wrapper.
 
 Tests the ResearchKBClient interface -- validates method signatures,
-error handling, and argument forwarding.
+error handling, argument forwarding, and _call_tool retry logic.
 """
 
 from __future__ import annotations
 
 import asyncio
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from pydantic import ValidationError
 
 from research_agent.config import MCPConfig
-from research_agent.exceptions import MCPConnectionError
+from research_agent.exceptions import MCPConnectionError, MCPToolError
 from research_agent.mcp_client import ResearchKBClient
 
 
@@ -246,3 +247,63 @@ class TestHTTPTransport:
         )
         url = config.http_url.rstrip("/") + config.mcp_path
         assert url == "http://localhost:8000/v1/mcp"
+
+
+class TestCallTool:
+    """Tests for _call_tool method -- retry logic and error handling."""
+
+    @pytest.mark.asyncio
+    async def test_successful_call_returns_text(self) -> None:
+        """Successful MCP tool call returns concatenated text content."""
+        config = MCPConfig(transport="stdio", research_kb_path="/fake")
+        client = ResearchKBClient(config)
+
+        # Inject a mock session directly
+        mock_session = AsyncMock()
+        text_block = SimpleNamespace(text="Result text")
+        mock_session.call_tool.return_value = SimpleNamespace(
+            content=[text_block],
+            isError=False,
+        )
+        client._session = mock_session
+
+        result = await client._call_tool("test_tool", {"arg": "value"})
+        assert result == "Result text"
+        mock_session.call_tool.assert_awaited_once_with("test_tool", {"arg": "value"})
+
+    @pytest.mark.asyncio
+    async def test_error_response_raises_mcp_tool_error(self) -> None:
+        """isError=True raises MCPToolError."""
+        config = MCPConfig(transport="stdio", research_kb_path="/fake")
+        client = ResearchKBClient(config)
+
+        mock_session = AsyncMock()
+        text_block = SimpleNamespace(text="Tool error detail")
+        mock_session.call_tool.return_value = SimpleNamespace(
+            content=[text_block],
+            isError=True,
+        )
+        client._session = mock_session
+
+        with pytest.raises(MCPToolError, match="test_tool"):
+            await client._call_tool("test_tool", {})
+
+    @pytest.mark.asyncio
+    async def test_retries_on_transient_mcp_tool_error(self) -> None:
+        """Retries up to 3 times on MCPToolError, then re-raises."""
+        config = MCPConfig(transport="stdio", research_kb_path="/fake")
+        client = ResearchKBClient(config)
+
+        mock_session = AsyncMock()
+        text_block = SimpleNamespace(text="Transient failure")
+        mock_session.call_tool.return_value = SimpleNamespace(
+            content=[text_block],
+            isError=True,
+        )
+        client._session = mock_session
+
+        with pytest.raises(MCPToolError):
+            await client._call_tool("flaky_tool", {})
+
+        # Should have retried 3 times total (tenacity stop_after_attempt(3))
+        assert mock_session.call_tool.await_count == 3

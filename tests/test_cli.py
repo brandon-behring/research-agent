@@ -1,13 +1,20 @@
 """Tests for CLI entry point.
 
-Tests argument parsing, error handling, and exit codes.
-Uses subprocess for integration-level tests.
+Tests argument parsing, error handling, exit codes, and main() function paths.
+Combines subprocess tests (arg parsing) with mocked unit tests (exit codes).
 """
 
 from __future__ import annotations
 
 import subprocess
 import sys
+from io import StringIO
+from unittest.mock import AsyncMock, patch
+
+import pytest
+
+from research_agent.cli import main
+from research_agent.exceptions import ResearchAgentError
 
 
 class TestCLIArgParsing:
@@ -95,3 +102,103 @@ class TestCLIErrorHandling:
             timeout=10,
         )
         assert result.returncode != 0
+
+
+class TestCLIUnitLevel:
+    """Unit tests for main() exit paths using mocked dependencies."""
+
+    def test_successful_run_prints_report(self) -> None:
+        """Successful run prints report to stdout."""
+        mock_result = {"report": "# Test Report\n\nFindings here."}
+        with (
+            patch("research_agent.cli.run_research", new_callable=AsyncMock) as mock_run,
+            patch("sys.argv", ["cli", "What is DML?"]),
+            patch("sys.stdout", new_callable=StringIO) as mock_stdout,
+        ):
+            mock_run.return_value = mock_result
+            main()
+            assert "Test Report" in mock_stdout.getvalue()
+
+    def test_output_file_writes_report(self, tmp_path: pytest.TempPathFactory) -> None:
+        """--output writes report to file."""
+        out_file = tmp_path / "report.md"  # type: ignore[operator]
+        mock_result = {"report": "# File Report"}
+        with (
+            patch("research_agent.cli.run_research", new_callable=AsyncMock) as mock_run,
+            patch("sys.argv", ["cli", "--output", str(out_file), "What is DML?"]),
+        ):
+            mock_run.return_value = mock_result
+            main()
+            assert out_file.read_text() == "# File Report"
+
+    def test_research_agent_error_exits_1(self) -> None:
+        """ResearchAgentError → exit code 1."""
+        with (
+            patch(
+                "research_agent.cli.run_research",
+                new_callable=AsyncMock,
+                side_effect=ResearchAgentError("Test error"),
+            ),
+            patch("sys.argv", ["cli", "test query"]),
+            pytest.raises(SystemExit) as exc_info,
+        ):
+            main()
+        assert exc_info.value.code == 1
+
+    def test_generic_exception_exits_2(self) -> None:
+        """Generic exception → exit code 2."""
+        with (
+            patch(
+                "research_agent.cli.run_research",
+                new_callable=AsyncMock,
+                side_effect=ValueError("Unexpected"),
+            ),
+            patch("sys.argv", ["cli", "test query"]),
+            pytest.raises(SystemExit) as exc_info,
+        ):
+            main()
+        assert exc_info.value.code == 2
+
+    def test_keyboard_interrupt_exits_130(self) -> None:
+        """KeyboardInterrupt → exit code 130."""
+        with (
+            patch(
+                "research_agent.cli.run_research",
+                new_callable=AsyncMock,
+                side_effect=KeyboardInterrupt(),
+            ),
+            patch("sys.argv", ["cli", "test query"]),
+            pytest.raises(SystemExit) as exc_info,
+        ):
+            main()
+        assert exc_info.value.code == 130
+
+    def test_verbose_sets_debug_logging(self) -> None:
+        """--verbose sets logging level to DEBUG."""
+        mock_result = {"report": "Report"}
+        with (
+            patch("research_agent.cli.run_research", new_callable=AsyncMock) as mock_run,
+            patch("sys.argv", ["cli", "--verbose", "test"]),
+            patch("logging.basicConfig") as mock_log_config,
+            patch("sys.stdout", new_callable=StringIO),
+        ):
+            mock_run.return_value = mock_result
+            main()
+            # basicConfig should have been called with DEBUG level (10)
+            call_kwargs = mock_log_config.call_args[1]
+            assert call_kwargs["level"] == 10
+
+    def test_streaming_mode_collects_report(self) -> None:
+        """--stream mode collects report via stream_research."""
+        mock_result = {"report": "# Streamed Report"}
+        with (
+            patch(
+                "research_agent.cli._run_streaming",
+                new_callable=AsyncMock,
+            ) as mock_stream,
+            patch("sys.argv", ["cli", "--stream", "test query"]),
+            patch("sys.stdout", new_callable=StringIO) as mock_stdout,
+        ):
+            mock_stream.return_value = mock_result
+            main()
+            assert "Streamed Report" in mock_stdout.getvalue()
