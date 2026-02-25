@@ -6,9 +6,9 @@ Near-term and medium-term improvements for the research-agent pipeline.
 
 ## Near-Term
 
-### Architecture Diagram
+### ~~Architecture Diagram~~ *(completed)*
 
-Visual diagram (Mermaid or Excalidraw) showing the LangGraph state flow, MCP tool mapping per node, and conditional routing logic. Currently only described in ASCII in the README.
+Added two Mermaid diagrams to README.md: pipeline flow with model-tier coloring and conditional routing, plus per-node MCP tool mapping.
 
 ### Persistent Session Memory
 

@@ -11,14 +11,70 @@ Given a research question, the agent decomposes it into sub-tasks, searches a kn
 
 ## Architecture
 
+### Pipeline Flow
+
+```mermaid
+flowchart TD
+    Q["User Question"]
+    QP["Query Planner<br/><i>Haiku — fast routing</i>"]
+    LS["Literature Search<br/><i>hybrid + fast_search fallback</i>"]
+    CE["Concept Explorer<br/><i>detail + 2-hop neighborhoods</i>"]
+    CA["Citation Analyzer<br/><i>networks + biblio coupling</i>"]
+    AA["Assumption Auditor<br/><i>method assumptions</i>"]
+    SW["Synthesis Writer<br/><i>Sonnet — deep reasoning</i>"]
+    R["Structured Report"]
+
+    Q --> QP
+    QP -->|"sub_tasks, search_queries"| LS
+    LS -->|"search_results"| CE
+    CE -->|"concepts"| CA
+    CA --> D{methods<br/>to audit?}
+    D -->|Yes| AA
+    D -->|No| SW
+    AA -->|"assumption_audits"| SW
+    SW --> R
+
+    style Q fill:#fff,stroke:#666
+    style QP fill:#e8f4fd,stroke:#1a73e8
+    style LS fill:#f5f5f5,stroke:#666
+    style CE fill:#f5f5f5,stroke:#666
+    style CA fill:#f5f5f5,stroke:#666
+    style AA fill:#f5f5f5,stroke:#666
+    style SW fill:#fce8e6,stroke:#d93025
+    style D fill:#fef7e0,stroke:#f9ab00
+    style R fill:#fff,stroke:#666
 ```
-User Question
-  → [Query Planner]         — decomposes into sub-tasks (Haiku: fast routing)
-  → [Literature Search]     — hybrid search: BM25 + vector + graph + PageRank
-  → [Concept Explorer]      — knowledge graph traversal (2-hop neighborhoods)
-  → [Citation Analyzer]     — citation networks + bibliographic coupling
-  → [Assumption Auditor]    — method assumption documentation (conditional)
-  → [Synthesis Writer]      — structured report with citations (Sonnet: deep reasoning)
+
+Legend: Blue = Haiku (fast/cheap) | Red = Sonnet (deep reasoning) | Gray = MCP-only (no LLM) | Yellow = Conditional routing
+
+### MCP Tool Mapping
+
+```mermaid
+flowchart LR
+    subgraph Agent["research-agent nodes"]
+        LS2["Literature Search"]
+        CE2["Concept Explorer"]
+        CA2["Citation Analyzer"]
+        AA2["Assumption Auditor"]
+    end
+
+    subgraph KB["research-kb MCP Server"]
+        S["search"]
+        FS["fast_search"]
+        GC["get_concept"]
+        GN["graph_neighborhood"]
+        CN["citation_network"]
+        BC["biblio_coupling"]
+        AU["audit_assumptions"]
+    end
+
+    LS2 -->|"via ResearchKBClient<br/>(stdio | HTTP)"| S
+    LS2 --> FS
+    CE2 --> GN
+    CE2 --> GC
+    CA2 --> CN
+    CA2 --> BC
+    AA2 --> AU
 ```
 
 ### Design Decisions

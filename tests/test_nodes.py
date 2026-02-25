@@ -182,6 +182,58 @@ class TestConceptExplorer:
         assert "concepts" in result
         assert len(result["concepts"]) == 0
 
+    @pytest.mark.asyncio
+    async def test_get_concept_enriches_concept_info(
+        self, test_config: AgentConfig, mock_mcp: ResearchKBClient
+    ) -> None:
+        """get_concept enriches ConceptInfo with type, description, and relationships."""
+        state = ResearchState(
+            query="test",
+            sub_tasks=[
+                SubTask(description="t", concepts_to_explore=["double machine learning"]),
+            ],
+        )
+        result = await concept_explorer(state, test_config, mock_mcp)
+
+        assert len(result["concepts"]) == 1
+        concept = result["concepts"][0]
+        # Detail fields populated from get_concept response
+        assert concept.concept_type == "METHOD"
+        assert "cross-fitting" in concept.description
+        assert len(concept.relationships) == 5
+        assert concept.relationships[0]["type"] == "REQUIRES"
+        # Neighborhood summary still present
+        assert "Graph Neighborhood" in concept.neighborhood_summary
+        # Name enriched from detail
+        assert concept.name == "Double Machine Learning"
+
+    @pytest.mark.asyncio
+    async def test_get_concept_failure_falls_back_to_neighborhood_only(
+        self, test_config: AgentConfig, mock_mcp: ResearchKBClient
+    ) -> None:
+        """When get_concept fails, falls back to neighborhood-only ConceptInfo."""
+        mock_mcp.get_concept.side_effect = RuntimeError("Concept not found in KB")
+
+        state = ResearchState(
+            query="test",
+            sub_tasks=[
+                SubTask(description="t", concepts_to_explore=["double machine learning"]),
+            ],
+        )
+        result = await concept_explorer(state, test_config, mock_mcp)
+
+        assert len(result["concepts"]) == 1
+        concept = result["concepts"][0]
+        # Neighborhood still works
+        assert concept.concept_id == "concept-dml-001"
+        assert "Graph Neighborhood" in concept.neighborhood_summary
+        # Detail fields empty (fallback)
+        assert concept.concept_type == ""
+        assert concept.description == ""
+        assert concept.relationships == []
+        # Name is the original input (not enriched)
+        assert concept.name == "double machine learning"
+
 
 class TestCitationAnalyzer:
     """Tests for the citation analyzer node."""

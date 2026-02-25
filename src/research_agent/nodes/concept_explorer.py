@@ -109,14 +109,21 @@ async def _explore_one(
     mcp: ResearchKBClient,
     name: str,
 ) -> ConceptInfo | None:
-    """Explore graph neighborhood for a single concept.
+    """Explore graph neighborhood and enrich with structured concept detail.
+
+    Two-step retrieval:
+        1. ``graph_neighborhood`` — discovers connected concepts and extracts concept_id
+        2. ``get_concept`` — fetches structured fields (type, description, relationships)
+
+    Step 2 is sequential (needs concept_id from step 1), but the outer
+    ``asyncio.gather`` in ``concept_explorer()`` still fans out across concepts.
 
     Args:
         mcp: Connected MCP client.
         name: Concept name to explore.
 
     Returns:
-        ConceptInfo or None if exploration failed.
+        ConceptInfo with neighborhood + detail fields, or None on failure.
     """
     try:
         raw = await mcp.graph_neighborhood(
@@ -133,9 +140,26 @@ async def _explore_one(
         if id_match:
             concept_id = id_match.group(1)
 
+        # Enrich with structured concept detail if we have an ID
+        detail: ConceptInfo | None = None
+        if concept_id:
+            try:
+                detail_raw = await mcp.get_concept(concept_id, include_relationships=True)
+                detail = _parse_concept_detail(detail_raw)
+            except (MCPToolError, RuntimeError) as exc:
+                logger.warning(
+                    "get_concept failed for '%s' (%s): %s — falling back to neighborhood only",
+                    name,
+                    concept_id,
+                    exc,
+                )
+
         return ConceptInfo(
             concept_id=concept_id,
-            name=name,
+            name=detail.name if detail and detail.name else name,
+            concept_type=detail.concept_type if detail else "",
+            description=detail.description if detail else "",
+            relationships=detail.relationships if detail else [],
             neighborhood_summary=raw,
         )
     except (MCPToolError, RuntimeError) as e:
