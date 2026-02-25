@@ -151,6 +151,42 @@ class TestCitationNetworkParser:
         assert len(citing) == 1
         assert len(cited_by) == 1
 
+    def test_multiline_extracts_source_id(self) -> None:
+        """Extracts source_id from continuation lines (research-kb canonical format)."""
+        md = """### Citing This Source (2)
+*Papers that built on this work*
+
+- **Debiased ML of CATEs** (2021)
+  - Semenova and Chernozhukov
+  - ID: `src-002-cate`
+
+- **Automatic Debiased ML** (2022)
+  - Chernozhukov et al.
+  - ID: `src-005-auto`
+
+### Cited By This Source (1)
+*Foundations and context*
+
+- **High-Dimensional Methods** (2014)
+  - Belloni, Chernozhukov, Hansen
+  - ID: `src-008-hdm`
+"""
+        citing, cited_by = _parse_citation_network(md)
+        assert len(citing) == 2
+        assert citing[0]["source_id"] == "src-002-cate"
+        assert citing[1]["source_id"] == "src-005-auto"
+        assert len(cited_by) == 1
+        assert cited_by[0]["source_id"] == "src-008-hdm"
+
+    def test_inline_id_still_works(self) -> None:
+        """Inline ID on the title line still works (backward compat)."""
+        md = """### Citing This Source (1)
+- **Paper A** (2024) - ID: `src-inline`
+"""
+        citing, _ = _parse_citation_network(md)
+        assert len(citing) == 1
+        assert citing[0]["source_id"] == "src-inline"
+
 
 class TestBiblioCouplingParser:
     """Tests for _parse_biblio_coupling."""
@@ -163,13 +199,8 @@ class TestBiblioCouplingParser:
         """Whitespace returns empty list."""
         assert _parse_biblio_coupling("  \n  ") == []
 
-    def test_parses_coupling_scores(self) -> None:
-        """Coupling percentages extracted correctly.
-
-        Parser expects all metadata on the same line as the bold title
-        (matching research-kb's actual output format).
-        """
-        # Single-line format matching research-kb output
+    def test_parses_inline_coupling_scores(self) -> None:
+        """Inline coupling and ID on the title line still works."""
         md = "- **Paper A** (2024) - Coupling: **45.2%** (8 shared refs) - ID: `src-a`\n"
         papers = _parse_biblio_coupling(md)
         assert len(papers) == 1
@@ -185,6 +216,26 @@ class TestBiblioCouplingParser:
         assert len(papers) == 1
         assert papers[0]["title"] == "Paper B"
         assert papers[0]["year"] == "2023"
+
+    def test_multiline_extracts_coupling_and_id(self) -> None:
+        """Extracts coupling_pct and source_id from continuation lines."""
+        md = (
+            "- **Debiased ML of CATEs** (2021)\n"
+            "  - Semenova and Chernozhukov\n"
+            "  - Coupling: **45.2%** (8 shared refs)\n"
+            "  - ID: `src-002-cate`\n"
+            "\n"
+            "- **Automatic Debiased ML** (2022)\n"
+            "  - Chernozhukov et al.\n"
+            "  - Coupling: **38.7%** (6 shared refs)\n"
+            "  - ID: `src-005-auto`\n"
+        )
+        papers = _parse_biblio_coupling(md)
+        assert len(papers) == 2
+        assert papers[0]["coupling_pct"] == 45.2
+        assert papers[0]["source_id"] == "src-002-cate"
+        assert papers[1]["coupling_pct"] == 38.7
+        assert papers[1]["source_id"] == "src-005-auto"
 
 
 class TestConceptDetailParser:

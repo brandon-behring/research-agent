@@ -21,6 +21,10 @@ logger = logging.getLogger(__name__)
 def _parse_citation_network(markdown: str) -> tuple[list[dict[str, str]], list[dict[str, str]]]:
     """Parse citation network markdown into citing/cited-by lists.
 
+    Uses a state machine to track the current entry across lines.
+    research-kb puts ``ID:`` on continuation lines (indented ``- ``),
+    not on the bold title line.
+
     Expected format::
 
         ### Citing This Source (N)
@@ -43,30 +47,50 @@ def _parse_citation_network(markdown: str) -> tuple[list[dict[str, str]], list[d
     citing: list[dict[str, str]] = []
     cited_by: list[dict[str, str]] = []
 
-    current_section = None
+    current_section: str | None = None
+    current_entry: dict[str, str] | None = None
+
+    def _flush_entry() -> None:
+        """Append current_entry to the appropriate section list."""
+        nonlocal current_entry
+        if current_entry is not None and current_section is not None:
+            target = citing if current_section == "citing" else cited_by
+            target.append(current_entry)
+            current_entry = None
 
     for line in markdown.split("\n"):
         if "Citing This Source" in line:
+            _flush_entry()
             current_section = "citing"
         elif "Cited By This Source" in line:
+            _flush_entry()
             current_section = "cited_by"
         elif line.startswith("- **") and current_section:
+            _flush_entry()
             title_match = re.match(r"- \*\*(.+?)\*\*\s*\((\d{4})\)", line)
             if title_match:
-                entry = {"title": title_match.group(1), "year": title_match.group(2)}
+                current_entry = {"title": title_match.group(1), "year": title_match.group(2)}
+                # Also check the title line itself for inline ID
                 id_match = re.search(r"ID:\s*`([^`]+)`", line)
                 if id_match:
-                    entry["source_id"] = id_match.group(1)
-                if current_section == "citing":
-                    citing.append(entry)
-                else:
-                    cited_by.append(entry)
+                    current_entry["source_id"] = id_match.group(1)
+        elif current_entry is not None and line.strip().startswith("- "):
+            # Continuation line: extract fields
+            stripped = line.strip()
+            id_match = re.search(r"ID:\s*`([^`]+)`", stripped)
+            if id_match:
+                current_entry["source_id"] = id_match.group(1)
 
+    _flush_entry()
     return citing, cited_by
 
 
 def _parse_biblio_coupling(markdown: str) -> list[dict[str, Any]]:
     """Parse bibliographic coupling markdown.
+
+    Uses a state machine to track the current paper across lines.
+    research-kb puts ``Coupling:`` and ``ID:`` on continuation lines
+    (indented ``- ``), not on the bold title line.
 
     Expected format::
 
@@ -85,26 +109,45 @@ def _parse_biblio_coupling(markdown: str) -> list[dict[str, Any]]:
         return []
 
     papers: list[dict[str, Any]] = []
+    current: dict[str, Any] | None = None
 
     for line in markdown.split("\n"):
         if line.startswith("- **"):
+            if current is not None:
+                papers.append(current)
             title_match = re.match(r"- \*\*(.+?)\*\*\s*\((\d{4})\)", line)
-            coupling_match = re.search(r"Coupling:\s*\*\*(.+?)%\*\*", line)
-            id_match = re.search(r"ID:\s*`([^`]+)`", line)
-
             if title_match:
-                paper: dict[str, Any] = {
+                current = {
                     "title": title_match.group(1),
                     "year": title_match.group(2),
                 }
+                # Also check the title line itself for inline fields
+                coupling_match = re.search(r"Coupling:\s*\*\*(.+?)%\*\*", line)
+                id_match = re.search(r"ID:\s*`([^`]+)`", line)
                 if coupling_match:
                     try:
-                        paper["coupling_pct"] = float(coupling_match.group(1))
+                        current["coupling_pct"] = float(coupling_match.group(1))
                     except ValueError:
                         logger.warning("Non-numeric coupling in: %s", line)
                 if id_match:
-                    paper["source_id"] = id_match.group(1)
-                papers.append(paper)
+                    current["source_id"] = id_match.group(1)
+            else:
+                current = None
+        elif current is not None and line.strip().startswith("- "):
+            # Continuation line: extract fields
+            stripped = line.strip()
+            coupling_match = re.search(r"Coupling:\s*\*\*(.+?)%\*\*", stripped)
+            id_match = re.search(r"ID:\s*`([^`]+)`", stripped)
+            if coupling_match:
+                try:
+                    current["coupling_pct"] = float(coupling_match.group(1))
+                except ValueError:
+                    logger.warning("Non-numeric coupling in: %s", stripped)
+            if id_match:
+                current["source_id"] = id_match.group(1)
+
+    if current is not None:
+        papers.append(current)
 
     return papers
 
