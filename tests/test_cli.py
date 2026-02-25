@@ -71,6 +71,26 @@ class TestCLIArgParsing:
         )
         assert "--stream" in result.stdout or "-s" in result.stdout
 
+    def test_no_cache_flag_accepted(self) -> None:
+        """--no-cache is a recognized flag."""
+        result = subprocess.run(
+            [sys.executable, "-m", "research_agent.cli", "--help"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        assert "--no-cache" in result.stdout
+
+    def test_clear_cache_flag_accepted(self) -> None:
+        """--clear-cache is a recognized flag."""
+        result = subprocess.run(
+            [sys.executable, "-m", "research_agent.cli", "--help"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        assert "--clear-cache" in result.stdout
+
 
 class TestCLIErrorHandling:
     """Test error handling paths."""

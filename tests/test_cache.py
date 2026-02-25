@@ -179,6 +179,22 @@ class TestReportCache:
         assert cache.get("key1") is not None
         cache.close()
 
+    def test_context_manager_closes(self, tmp_path: Path) -> None:
+        """Context manager closes connection on exit."""
+        with ReportCache(tmp_path / "cache.db") as cache:
+            cache.put("key1", "q", "r", "{}", "{}")
+            assert cache._conn is not None
+        assert cache._conn is None
+
+    def test_enabled_false_is_noop(self, tmp_path: Path) -> None:
+        """enabled=False makes all methods no-op without touching disk."""
+        with ReportCache(tmp_path / "cache.db", enabled=False) as cache:
+            assert cache._conn is None
+            assert cache.get("key1") is None
+            cache.put("key1", "q", "r", "{}", "{}")
+            assert cache.clear() == 0
+            assert cache.evict_expired() == 0
+
 
 class TestReportCacheGracefulDegradation:
     """Tests for graceful degradation on errors."""
@@ -208,6 +224,64 @@ class TestReportCacheGracefulDegradation:
         assert cache.get("key") is None
         cache.put("key", "q", "r", "{}", "{}")  # No-op
         assert cache.clear() == 0
+
+    def test_corrupted_metadata_json_deleted(self, tmp_path: Path) -> None:
+        """Corrupt metadata_json entry returns None and is deleted from DB."""
+        cache = ReportCache(tmp_path / "cache.db")
+        cache.put("key1", "q", "report", "{}", "{}")
+
+        # Corrupt the metadata_json column directly
+        cache._conn.execute(  # type: ignore[union-attr]
+            "UPDATE report_cache SET metadata_json = ? WHERE cache_key = ?",
+            ("not-valid-json{{{", "key1"),
+        )
+        cache._conn.commit()  # type: ignore[union-attr]
+
+        # get() should return None (graceful degradation)
+        assert cache.get("key1") is None
+
+        # Corrupt entry should have been deleted
+        cursor = cache._conn.execute(  # type: ignore[union-attr]
+            "SELECT COUNT(*) FROM report_cache WHERE cache_key = ?",
+            ("key1",),
+        )
+        assert cursor.fetchone()[0] == 0
+        cache.close()
+
+
+class TestExtractMetadata:
+    """Tests for _extract_metadata() from cli.py."""
+
+    def test_with_pydantic_like_objects(self) -> None:
+        """Extracts names from objects with .name / .method_name attrs."""
+        from research_agent.cli import _extract_metadata
+
+        concept = MagicMock()
+        concept.name = "double_machine_learning"
+        audit = MagicMock()
+        audit.method_name = "propensity_score"
+
+        result = _extract_metadata(
+            {
+                "search_results": [{"id": 1}, {"id": 2}],
+                "concepts": [concept],
+                "assumption_audits": [audit],
+            }
+        )
+        assert result["source_count"] == 2
+        assert result["concept_names"] == ["double_machine_learning"]
+        assert result["methods_audited"] == ["propensity_score"]
+
+    def test_with_empty_result(self) -> None:
+        """Empty result dict yields zero-value metadata."""
+        from research_agent.cli import _extract_metadata
+
+        result = _extract_metadata({})
+        assert result == {
+            "source_count": 0,
+            "concept_names": [],
+            "methods_audited": [],
+        }
 
 
 class TestCLICacheIntegration:

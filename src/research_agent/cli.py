@@ -139,11 +139,9 @@ def main() -> None:
 
     # Handle --clear-cache early exit (no query required)
     if args.clear_cache:
-        db_path = Path(config.cache_db_path).expanduser()
-        cache = ReportCache(db_path, config.cache_ttl_hours)
-        count = cache.clear()
+        with ReportCache(Path(config.cache_db_path).expanduser(), config.cache_ttl_hours) as cache:
+            count = cache.clear()
         print(f"Cleared {count} cached reports.", file=sys.stderr)
-        cache.close()
         return
 
     # Validate inputs (after --clear-cache which doesn't need a query)
@@ -155,12 +153,12 @@ def main() -> None:
         if not output_path.parent.exists():
             parser.error(f"Output directory does not exist: {output_path.parent}")
 
-    # ── Cache lookup ──────────────────────────────────────────────────
-    cache: ReportCache | None = None
-    cache_key: str | None = None
-    if config.cache_enabled and not args.no_cache:
-        db_path = Path(config.cache_db_path).expanduser()
-        cache = ReportCache(db_path, config.cache_ttl_hours)
+    # ── Single with-block: cache lifecycle managed by context manager ─
+    with ReportCache(
+        Path(config.cache_db_path).expanduser(),
+        config.cache_ttl_hours,
+        enabled=config.cache_enabled and not args.no_cache,
+    ) as cache:
         cache_key = compute_cache_key(
             args.query,
             config.max_search_results,
@@ -172,35 +170,27 @@ def main() -> None:
         if entry is not None:
             print("[cached]", file=sys.stderr)
             _output_report(entry.report, args)
-            cache.close()
             return
 
-    # ── Run pipeline ──────────────────────────────────────────────────
-    try:
-        if args.stream:
-            result = asyncio.run(_run_streaming(args.query, config))
-        else:
-            result = asyncio.run(run_research(args.query, config))
-    except ResearchAgentError as e:
-        if cache:
-            cache.close()
-        print(f"Error: {e}", file=sys.stderr)
-        sys.exit(1)
-    except KeyboardInterrupt:
-        if cache:
-            cache.close()
-        print("\nInterrupted.", file=sys.stderr)
-        sys.exit(130)
-    except Exception as e:
-        if cache:
-            cache.close()
-        print(f"Unexpected error: {e}", file=sys.stderr)
-        sys.exit(2)
+        # ── Run pipeline ──────────────────────────────────────────────
+        try:
+            if args.stream:
+                result = asyncio.run(_run_streaming(args.query, config))
+            else:
+                result = asyncio.run(run_research(args.query, config))
+        except ResearchAgentError as e:
+            print(f"Error: {e}", file=sys.stderr)
+            sys.exit(1)
+        except KeyboardInterrupt:
+            print("\nInterrupted.", file=sys.stderr)
+            sys.exit(130)
+        except Exception as e:
+            print(f"Unexpected error: {e}", file=sys.stderr)
+            sys.exit(2)
 
-    report = result.get("report", "No report generated.")
+        report = result.get("report", "No report generated.")
 
-    # ── Cache write ───────────────────────────────────────────────────
-    if cache is not None and cache_key is not None:
+        # ── Cache write ───────────────────────────────────────────────
         metadata = _extract_metadata(result)
         config_summary = {
             "max_search_results": config.max_search_results,
@@ -216,7 +206,6 @@ def main() -> None:
             json.dumps(config_summary),
         )
         cache.evict_expired()
-        cache.close()
 
     _output_report(report, args)
 

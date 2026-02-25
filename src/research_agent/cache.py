@@ -110,26 +110,31 @@ CREATE INDEX IF NOT EXISTS idx_cache_created ON report_cache (created_at)
 class ReportCache:
     """SQLite-backed report cache with TTL expiration.
 
+    Supports context manager protocol and null-object pattern via ``enabled=False``.
+    When disabled, all methods are no-ops (get→None, put→no-op, clear→0).
+
     Graceful degradation: every public method catches sqlite3.Error and OSError,
     logs a warning, and returns None or no-op. Callers never handle cache exceptions.
 
     Args:
         db_path: Path to SQLite database file. Parent directories created automatically.
         ttl_hours: Hours before cached reports expire.
+        enabled: If False, skip DB init; all methods become no-ops.
 
     Example::
 
-        cache = ReportCache(Path("~/.cache/research-agent/cache.db").expanduser())
-        entry = cache.get(cache_key)
-        if entry is not None:
-            print(entry.report)
-        cache.close()
+        with ReportCache(Path("~/.cache/research-agent/cache.db").expanduser()) as cache:
+            entry = cache.get(cache_key)
+            if entry is not None:
+                print(entry.report)
     """
 
-    def __init__(self, db_path: Path, ttl_hours: float = 24.0) -> None:
+    def __init__(self, db_path: Path, ttl_hours: float = 24.0, *, enabled: bool = True) -> None:
         self._db_path = db_path
         self._ttl_seconds = ttl_hours * 3600.0
         self._conn: sqlite3.Connection | None = None
+        if not enabled:
+            return
         try:
             db_path.parent.mkdir(parents=True, exist_ok=True)
             self._conn = sqlite3.connect(str(db_path))
@@ -140,6 +145,12 @@ class ReportCache:
         except (sqlite3.Error, OSError) as e:
             logger.warning("Cache initialization failed: %s", e)
             self._conn = None
+
+    def __enter__(self) -> ReportCache:
+        return self
+
+    def __exit__(self, *exc_info: object) -> None:
+        self.close()
 
     def get(self, cache_key: str) -> CacheEntry | None:
         """Retrieve a cached report by key.
@@ -177,7 +188,14 @@ class ReportCache:
             metadata["cached_at"] = created_at
             return CacheEntry(report=report, metadata=metadata)
         except (sqlite3.Error, json.JSONDecodeError) as e:
-            logger.warning("Cache get failed: %s", e)
+            logger.warning("Cache get failed for key %s: %s", cache_key, e)
+            # Delete corrupt entry so it doesn't persist until TTL
+            with contextlib.suppress(sqlite3.Error):
+                self._conn.execute(  # type: ignore[union-attr]
+                    "DELETE FROM report_cache WHERE cache_key = ?",
+                    (cache_key,),
+                )
+                self._conn.commit()  # type: ignore[union-attr]
             return None
 
     def put(

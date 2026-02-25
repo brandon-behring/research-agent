@@ -22,6 +22,8 @@ ruff format src/ tests/                   # Format
 research-agent "What are the assumptions of double machine learning?"
 research-agent --verbose -o report.md "Compare DML and IV"
 research-agent --stream "What is DML?"    # Stream progress to stderr
+research-agent --no-cache "Query"         # Bypass cache for this query
+research-agent --clear-cache              # Clear all cached reports and exit
 
 # Docker (multi-service with research-kb)
 docker-compose up                         # Start agent + research-kb
@@ -56,8 +58,10 @@ identified in the sub-tasks (`state.py:31` — `SubTask.methods_to_audit`).
 
 ```
 src/research_agent/
+├── cache.py            # SQLite report cache (query hash + TTL, context manager)
 ├── cli.py              # CLI entry point (argparse + asyncio.run)
 ├── config.py           # ModelConfig, MCPConfig, AgentConfig (frozen dataclasses)
+├── exceptions.py       # ResearchAgentError hierarchy
 ├── graph.py            # LangGraph StateGraph — build_graph() + run_research()
 ├── mcp_client.py       # ResearchKBClient — 7-tool MCP wrapper
 ├── state.py            # ResearchState + typed sub-dataclasses
@@ -94,3 +98,6 @@ Environment variables (see `.env.example`):
 - `MCP_PATH` — MCP endpoint path appended to HTTP URL (default `/mcp`)
 - `PLANNING_MODEL`, `SYNTHESIS_MODEL` — Override model selection
 - `MAX_SEARCH_RESULTS`, `MAX_CONCEPTS`, `MAX_CITATIONS` — Limit tuning
+- `CACHE_ENABLED` — Enable/disable report cache (default: `true`)
+- `CACHE_DB_PATH` — SQLite cache file path (default: `~/.cache/research-agent/cache.db`)
+- `CACHE_TTL_HOURS` — Cache expiry in hours (default: `24`)
