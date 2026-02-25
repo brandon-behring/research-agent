@@ -33,19 +33,7 @@ flowchart TD
     D -->|No| SW
     AA -->|"assumption_audits"| SW
     SW --> R
-
-    style Q fill:#fff,stroke:#666
-    style QP fill:#e8f4fd,stroke:#1a73e8
-    style LS fill:#f5f5f5,stroke:#666
-    style CE fill:#f5f5f5,stroke:#666
-    style CA fill:#f5f5f5,stroke:#666
-    style AA fill:#f5f5f5,stroke:#666
-    style SW fill:#fce8e6,stroke:#d93025
-    style D fill:#fef7e0,stroke:#f9ab00
-    style R fill:#fff,stroke:#666
 ```
-
-Legend: Blue = Haiku (fast/cheap) | Red = Sonnet (deep reasoning) | Gray = MCP-only (no LLM) | Yellow = Conditional routing
 
 ### MCP Tool Mapping
 
