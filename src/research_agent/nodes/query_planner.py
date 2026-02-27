@@ -40,6 +40,14 @@ For each sub-task, specify:
 2. search_queries: 1-3 specific search queries for the knowledge base
 3. concepts_to_explore: Key concepts to look up in the knowledge graph (by name)
 4. methods_to_audit: Statistical methods whose assumptions should be checked
+5. search_domain: Domain filter -- "causal_inference", "time_series", or "" (cross-domain)
+6. search_context: Search weighting strategy:
+   - "auditing": emphasize assumption-checking content (use when auditing methods)
+   - "building": emphasize implementation/construction content (use when building models)
+   - "balanced": default, equal weighting
+7. connections_to_explain: Pairs of concept names whose relationship should be traced.
+   Use this when two concepts are mentioned together but their connection needs explanation.
+   Example: [["DML", "cross-fitting"], ["unconfoundedness", "overlap"]]
 
 Be specific with search queries -- the KB uses hybrid search (BM25 + vector + graph),
 so both keywords and natural language work.

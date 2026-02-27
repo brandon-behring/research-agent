@@ -179,6 +179,8 @@ async def _search_one(
     mcp: ResearchKBClient,
     query: str,
     config: AgentConfig,
+    domain: str = "",
+    context_type: str = "balanced",
 ) -> tuple[list[SearchResult], str]:
     """Execute a single search query with fast_search fallback.
 
@@ -186,6 +188,8 @@ async def _search_one(
         mcp: Connected MCP client.
         query: Search query string.
         config: Agent configuration (for max_search_results).
+        domain: KB domain filter (from sub-task's search_domain).
+        context_type: Search weighting (from sub-task's search_context).
 
     Returns:
         Tuple of (parsed results, query string) for post-gather dedup.
@@ -194,7 +198,8 @@ async def _search_one(
         raw = await mcp.search(
             query=query,
             limit=config.max_search_results,
-            context_type="balanced",
+            domain=domain or None,
+            context_type=context_type or "balanced",
         )
         results = _parse_search_results(raw)
 
@@ -244,27 +249,32 @@ async def literature_search(
     """
     logger.info("Starting literature search across %d sub-tasks", len(state.sub_tasks))
 
-    all_queries = [q for task in state.sub_tasks for q in task.search_queries]
+    # Build (query, domain, context_type) tuples preserving sub-task hints
+    query_specs: list[tuple[str, str, str]] = []
+    for task in state.sub_tasks:
+        for q in task.search_queries:
+            query_specs.append((q, task.search_domain, task.search_context))
+
     all_results: list[SearchResult] = []
     seen_source_ids: set[str] = set()
 
     sem = asyncio.Semaphore(_CONCURRENCY_LIMIT)
 
-    async def _bounded_search(q: str) -> tuple[list[SearchResult], str]:
+    async def _bounded_search(q: str, domain: str, ctx: str) -> tuple[list[SearchResult], str]:
         async with sem:
-            return await _search_one(mcp, q, config)
+            return await _search_one(mcp, q, config, domain=domain, context_type=ctx)
 
     try:
         async with asyncio.timeout(_SEARCH_TIMEOUT_SECONDS):
             batch_results = await asyncio.gather(
-                *[_bounded_search(q) for q in all_queries],
+                *[_bounded_search(q, domain, ctx) for q, domain, ctx in query_specs],
                 return_exceptions=True,
             )
 
             # Deduplicate across all query results post-gather
             for i, raw in enumerate(batch_results):
                 if isinstance(raw, BaseException):
-                    logger.warning("Unexpected error searching '%s': %s", all_queries[i], raw)
+                    logger.warning("Unexpected error searching '%s': %s", query_specs[i][0], raw)
                     continue
                 parsed, query = raw
                 for result in parsed:
@@ -287,7 +297,7 @@ async def literature_search(
     # Sort by score descending
     all_results.sort(key=lambda r: r.score, reverse=True)
 
-    summary = f"Found {len(all_results)} unique results across {len(all_queries)} queries."
+    summary = f"Found {len(all_results)} unique results across {len(query_specs)} queries."
     logger.info(summary)
 
     return NodeUpdate(

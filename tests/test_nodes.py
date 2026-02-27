@@ -97,6 +97,50 @@ class TestLiteratureSearch:
         assert "search_summary" in result
 
     @pytest.mark.asyncio
+    async def test_threads_domain_and_context_to_search(
+        self, test_config: AgentConfig, mock_mcp: ResearchKBClient
+    ) -> None:
+        """Passes sub-task search_domain and search_context to MCP search calls."""
+        state = ResearchState(
+            query="test",
+            sub_tasks=[
+                SubTask(
+                    description="Causal task",
+                    search_queries=["DML assumptions"],
+                    search_domain="causal_inference",
+                    search_context="auditing",
+                ),
+            ],
+        )
+        await literature_search(state, test_config, mock_mcp)
+
+        # Verify domain and context_type were passed to MCP
+        call_kwargs = mock_mcp.search.call_args
+        assert call_kwargs.kwargs.get("domain") == "causal_inference"
+        assert call_kwargs.kwargs.get("context_type") == "auditing"
+
+    @pytest.mark.asyncio
+    async def test_empty_domain_passes_none(
+        self, test_config: AgentConfig, mock_mcp: ResearchKBClient
+    ) -> None:
+        """Empty search_domain passes None to MCP (no domain filter)."""
+        state = ResearchState(
+            query="test",
+            sub_tasks=[
+                SubTask(
+                    description="Cross-domain",
+                    search_queries=["general query"],
+                    search_domain="",
+                    search_context="balanced",
+                ),
+            ],
+        )
+        await literature_search(state, test_config, mock_mcp)
+
+        call_kwargs = mock_mcp.search.call_args
+        assert call_kwargs.kwargs.get("domain") is None
+
+    @pytest.mark.asyncio
     async def test_sparse_result_triggers_fast_search_supplement(
         self, test_config: AgentConfig, mock_mcp: ResearchKBClient
     ) -> None:
