@@ -13,7 +13,10 @@ import pytest
 from research_agent.config import AgentConfig
 from research_agent.mcp_client import ResearchKBClient
 from research_agent.nodes.assumption_auditor import assumption_auditor
-from research_agent.nodes.citation_analyzer import citation_analyzer
+from research_agent.nodes.citation_analyzer import (
+    _parse_source_detail,
+    citation_analyzer,
+)
 from research_agent.nodes.concept_explorer import concept_explorer
 from research_agent.nodes.literature_search import literature_search
 from research_agent.nodes.query_planner import _build_system_prompt
@@ -476,6 +479,73 @@ class TestCitationAnalyzer:
         # The working source has populated citations
         ok_cit = next(c for c in result["citations"] if c.source_id == "src-ok")
         assert len(ok_cit.citing) > 0
+
+    @pytest.mark.asyncio
+    async def test_enriches_sources_with_get_source(
+        self, test_config: AgentConfig, mock_mcp: ResearchKBClient
+    ) -> None:
+        """Enriches analyzed sources with full metadata via get_source."""
+        state = ResearchState(
+            query="test",
+            search_results=[
+                SearchResult(title="Paper A", content="...", source_id="src-001", score=0.9),
+            ],
+        )
+        result = await citation_analyzer(state, test_config, mock_mcp)
+        assert "source_details" in result
+        assert len(result["source_details"]) == 1
+        assert result["source_details"][0]["title"] is not None
+        mock_mcp.get_source.assert_awaited()
+
+    @pytest.mark.asyncio
+    async def test_enrichment_graceful_on_failure(
+        self, test_config: AgentConfig, mock_mcp: ResearchKBClient
+    ) -> None:
+        """Source enrichment failure doesn't block citation analysis."""
+        mock_mcp.get_source.side_effect = RuntimeError("source not found")
+        state = ResearchState(
+            query="test",
+            search_results=[
+                SearchResult(title="Paper A", content="...", source_id="src-001", score=0.9),
+            ],
+        )
+        result = await citation_analyzer(state, test_config, mock_mcp)
+        assert len(result["citations"]) == 1  # Citations still work
+        assert result["source_details"] == []  # Enrichment gracefully empty
+
+
+class TestParseSourceDetail:
+    """Tests for _parse_source_detail markdown parser."""
+
+    def test_parses_full_metadata(self) -> None:
+        """Extracts all fields from well-formed markdown."""
+        raw = (
+            "## Double Machine Learning\n\n"
+            "**Authors:** Chernozhukov et al.\n"
+            "**Year:** 2018\n"
+            "**Type:** Paper\n"
+            "**Source ID:** `src-001-dml`\n"
+            "**DOI:** 10.1111/ectj.12097\n"
+        )
+        detail = _parse_source_detail(raw)
+        assert detail["title"] == "Double Machine Learning"
+        assert detail["authors"] == "Chernozhukov et al."
+        assert detail["year"] == "2018"
+        assert detail["type"] == "Paper"
+        assert detail["source_id"] == "src-001-dml"
+        assert detail["doi"] == "10.1111/ectj.12097"
+
+    def test_handles_partial_metadata(self) -> None:
+        """Handles response with only some fields."""
+        raw = "## Some Title\n**Year:** 2020\n"
+        detail = _parse_source_detail(raw)
+        assert detail["title"] == "Some Title"
+        assert detail["year"] == "2020"
+        assert "authors" not in detail
+
+    def test_returns_empty_on_no_structure(self) -> None:
+        """Returns empty dict on unrecognizable input."""
+        assert _parse_source_detail("just plain text") == {}
 
 
 class TestAssumptionAuditor:

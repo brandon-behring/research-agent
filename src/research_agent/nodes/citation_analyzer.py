@@ -13,6 +13,7 @@ import re
 from typing import Any
 
 from research_agent.config import AgentConfig
+from research_agent.exceptions import MCPToolError
 from research_agent.mcp_client import ResearchKBClient
 from research_agent.parsing import parse_json_first
 from research_agent.state import CitationInfo, NodeUpdate, ResearchState, SearchResult
@@ -279,6 +280,76 @@ def _parse_biblio_coupling(raw: str) -> list[dict[str, Any]]:
     )
 
 
+def _parse_source_detail(raw: str) -> dict[str, str]:
+    """Parse get_source markdown response into a metadata dict.
+
+    Expected format::
+
+        ## Title Here
+        **Authors:** Author List
+        **Year:** 2018
+        **Type:** Paper
+        **Source ID:** `src-001`
+        **DOI:** 10.1234/...
+
+    Args:
+        raw: Markdown string from research_kb_get_source.
+
+    Returns:
+        Dict with title, authors, year, type, source_id, doi keys.
+        Empty dict if parsing extracts nothing useful.
+    """
+    detail: dict[str, str] = {}
+
+    for line in raw.split("\n"):
+        line = line.strip()
+        if line.startswith("## ") and "title" not in detail:
+            detail["title"] = line[3:].strip()
+        elif line.startswith("**Authors:**"):
+            detail["authors"] = line.split("**Authors:**", 1)[1].strip()
+        elif line.startswith("**Year:**"):
+            detail["year"] = line.split("**Year:**", 1)[1].strip()
+        elif line.startswith("**Type:**"):
+            detail["type"] = line.split("**Type:**", 1)[1].strip()
+        elif line.startswith("**Source ID:**"):
+            id_part = line.split("**Source ID:**", 1)[1].strip()
+            # Strip backticks: `src-001` → src-001
+            detail["source_id"] = id_part.strip("`")
+        elif line.startswith("**DOI:**"):
+            detail["doi"] = line.split("**DOI:**", 1)[1].strip()
+
+    return detail
+
+
+async def _enrich_sources(
+    mcp: ResearchKBClient,
+    source_ids: list[str],
+) -> list[dict[str, str]]:
+    """Enrich sources with full metadata via get_source.
+
+    Optional enrichment — failures are silently skipped. Each source
+    is fetched sequentially to avoid overwhelming MCP with requests
+    (citation network + biblio coupling already run concurrently).
+
+    Args:
+        mcp: Connected MCP client.
+        source_ids: Source IDs to enrich.
+
+    Returns:
+        List of parsed source detail dicts.
+    """
+    details: list[dict[str, str]] = []
+    for sid in source_ids:
+        try:
+            raw = await mcp.get_source(sid, include_chunks=False)
+            detail = _parse_source_detail(raw)
+            if detail:
+                details.append(detail)
+        except (MCPToolError, RuntimeError) as e:
+            logger.warning("get_source failed for %s (non-fatal): %s", sid, e)
+    return details
+
+
 async def _analyze_one_source(
     mcp: ResearchKBClient,
     source_id: str,
@@ -400,6 +471,12 @@ async def citation_analyzer(
     except TimeoutError:
         logger.warning("Citation analysis timed out with %d sources analyzed", len(citations))
 
+    # Enrich top sources with full metadata (optional)
+    enrichment_ids = [r.source_id for r in unique_results]
+    source_details = await _enrich_sources(mcp, enrichment_ids)
+    if source_details:
+        logger.info("Enriched %d sources with full metadata", len(source_details))
+
     total_citing = sum(len(c.citing) for c in citations)
     total_cited = sum(len(c.cited_by) for c in citations)
     total_similar = sum(len(c.similar_papers) for c in citations)
@@ -408,10 +485,13 @@ async def citation_analyzer(
         f"{total_citing} citing, {total_cited} cited-by, "
         f"{total_similar} similar papers."
     )
+    if source_details:
+        summary += f" Enriched {len(source_details)} with full metadata."
     logger.info(summary)
 
     return NodeUpdate(
         citations=citations,
         citation_summary=summary,
+        source_details=source_details,
         current_node="citation_analyzer",
     )

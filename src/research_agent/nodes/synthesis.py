@@ -151,6 +151,22 @@ def _build_evidence_context(state: ResearchState) -> str:
                     )
         sections.append("\n".join(cite_lines))
 
+    # Source details (enriched metadata from get_source)
+    if state.source_details:
+        detail_lines = [f"## Source Details ({len(state.source_details)} enriched)"]
+        for s in state.source_details:
+            title = s.get("title", "Unknown")
+            detail_lines.append(f"\n### {title}")
+            if s.get("authors"):
+                detail_lines.append(f"Authors: {s['authors']}")
+            if s.get("year"):
+                detail_lines.append(f"Year: {s['year']}")
+            if s.get("type"):
+                detail_lines.append(f"Type: {s['type']}")
+            if s.get("doi"):
+                detail_lines.append(f"DOI: {s['doi']}")
+        sections.append("\n".join(detail_lines))
+
     # Assumptions
     if state.assumption_audits:
         audit_lines = [f"## Assumption Audits ({len(state.assumption_audits)} methods)"]

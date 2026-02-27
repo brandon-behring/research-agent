@@ -264,3 +264,65 @@ class TestConceptualConnections:
         assert "Conceptual Connections (2)" in ctx
         assert "A → B" in ctx
         assert "X → Y" in ctx
+
+
+class TestSourceDetailsSection:
+    """Tests for source details in evidence context."""
+
+    def test_includes_source_details(self) -> None:
+        """Source details section appears when source_details populated."""
+        state = ResearchState(
+            query="test",
+            planning_rationale="plan",
+            source_details=[
+                {
+                    "title": "Double Machine Learning",
+                    "authors": "Chernozhukov et al.",
+                    "year": "2018",
+                    "type": "Paper",
+                    "doi": "10.1111/ectj.12097",
+                }
+            ],
+        )
+        ctx = _build_evidence_context(state)
+        assert "Source Details (1 enriched)" in ctx
+        assert "Double Machine Learning" in ctx
+        assert "Chernozhukov" in ctx
+        assert "10.1111" in ctx
+
+    def test_omits_source_details_when_empty(self) -> None:
+        """No source details section when list is empty."""
+        state = ResearchState(query="test", planning_rationale="plan")
+        ctx = _build_evidence_context(state)
+        assert "Source Details" not in ctx
+
+
+class TestKBContextInMetadata:
+    """Tests for KB context in evidence quality metadata."""
+
+    def test_includes_kb_stats(self) -> None:
+        """kb_stats_summary appears in evidence metadata."""
+        state = ResearchState(
+            query="test",
+            planning_rationale="plan",
+            kb_stats_summary="495 sources, 226K chunks",
+        )
+        ctx = _build_evidence_context(state)
+        assert "KB corpus: 495 sources" in ctx
+
+    def test_includes_kb_domains(self) -> None:
+        """kb_domains appear in evidence metadata."""
+        state = ResearchState(
+            query="test",
+            planning_rationale="plan",
+            kb_domains=["causal_inference", "time_series"],
+        )
+        ctx = _build_evidence_context(state)
+        assert "KB domains: causal_inference, time_series" in ctx
+
+    def test_omits_kb_context_when_empty(self) -> None:
+        """No KB context lines when fields are empty."""
+        state = ResearchState(query="test", planning_rationale="plan")
+        ctx = _build_evidence_context(state)
+        assert "KB corpus" not in ctx
+        assert "KB domains" not in ctx
