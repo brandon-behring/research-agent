@@ -11,6 +11,7 @@ import asyncio
 import json
 import logging
 import re
+from dataclasses import dataclass
 from typing import Any
 
 from research_agent.config import AgentConfig
@@ -29,6 +30,9 @@ _DEFAULT_HOPS = 2
 
 # Default neighbor limit per concept.
 _DEFAULT_NEIGHBOR_LIMIT = 30
+
+# Maximum auto-discovered methods from graph (ASSUMPTION/THEOREM types).
+_MAX_DISCOVERED_METHODS = 3
 
 
 def _parse_concept_detail_json(raw: str) -> ConceptInfo | None:
@@ -198,10 +202,18 @@ def _build_neighborhood_summary(data: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+@dataclass
+class _ExploreResult:
+    """Internal result from _explore_one, carrying concept + discovered neighbors."""
+
+    concept: ConceptInfo
+    assumption_neighbors: list[str]  # ASSUMPTION/THEOREM names from neighborhood
+
+
 async def _explore_one(
     mcp: ResearchKBClient,
     name: str,
-) -> ConceptInfo | None:
+) -> _ExploreResult | None:
     """Explore graph neighborhood and enrich with structured concept detail.
 
     Two-step retrieval:
@@ -216,7 +228,7 @@ async def _explore_one(
         name: Concept name to explore.
 
     Returns:
-        ConceptInfo with neighborhood + detail fields, or None on failure.
+        _ExploreResult with concept info + discovered neighbors, or None on failure.
     """
     try:
         raw = await mcp.graph_neighborhood(
@@ -229,10 +241,15 @@ async def _explore_one(
         # Extract concept_id and build summary — JSON-first with markdown fallback
         concept_id = ""
         neighborhood_summary = raw  # fallback: raw response as-is
+        assumption_neighbors: list[str] = []
         try:
             data = json.loads(raw)
             concept_id = data.get("center", {}).get("id", "")
             neighborhood_summary = _build_neighborhood_summary(data)
+            # Collect ASSUMPTION/THEOREM neighbors for auto-discovery
+            for node in data.get("nodes", []):
+                if node.get("type") in ("ASSUMPTION", "THEOREM") and node.get("name"):
+                    assumption_neighbors.append(node["name"])
         except (json.JSONDecodeError, KeyError, TypeError):
             id_match = re.search(r"ID:\s*`([^`]+)`", raw)
             if id_match:
@@ -252,7 +269,7 @@ async def _explore_one(
                     exc,
                 )
 
-        return ConceptInfo(
+        concept = ConceptInfo(
             concept_id=concept_id,
             name=detail.name if detail and detail.name else name,
             concept_type=detail.concept_type if detail else "",
@@ -260,6 +277,7 @@ async def _explore_one(
             relationships=detail.relationships if detail else [],
             neighborhood_summary=neighborhood_summary,
         )
+        return _ExploreResult(concept=concept, assumption_neighbors=assumption_neighbors)
     except (MCPToolError, RuntimeError) as e:
         logger.warning("Failed to explore concept '%s': %s", name, e)
         return None
@@ -304,6 +322,8 @@ async def concept_explorer(
     unique_names = unique_names[: config.max_concepts]
 
     concepts: list[ConceptInfo] = []
+    discovered_methods: list[str] = []
+    seen_discovered: set[str] = set()
 
     try:
         async with asyncio.timeout(_EXPLORATION_TIMEOUT_SECONDS):
@@ -316,16 +336,29 @@ async def concept_explorer(
                 if isinstance(r, BaseException):
                     logger.warning("Unexpected error exploring '%s': %s", unique_names[i], r)
                 elif r is not None:
-                    concepts.append(r)
+                    concepts.append(r.concept)
+                    # Collect ASSUMPTION/THEOREM neighbors for auto-discovery
+                    for neighbor_name in r.assumption_neighbors:
+                        if len(discovered_methods) >= _MAX_DISCOVERED_METHODS:
+                            break
+                        name_lower = neighbor_name.lower()
+                        if name_lower not in seen_discovered:
+                            seen_discovered.add(name_lower)
+                            discovered_methods.append(neighbor_name)
+                            logger.info("Auto-discovered method from graph: %s", neighbor_name)
 
     except TimeoutError:
         logger.warning("Concept exploration timed out with %d concepts", len(concepts))
 
     summary = f"Explored {len(unique_names)} concepts, found {len(concepts)} total entries."
+    if discovered_methods:
+        methods_str = ", ".join(discovered_methods)
+        summary += f" Auto-discovered {len(discovered_methods)} methods: {methods_str}."
     logger.info(summary)
 
     return NodeUpdate(
         concepts=concepts,
         concept_map_summary=summary,
+        discovered_methods=discovered_methods,
         current_node="concept_explorer",
     )

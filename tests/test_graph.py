@@ -61,6 +61,15 @@ class TestConditionalRouting:
         )
         assert _should_audit_assumptions(state) == "synthesis"
 
+    def test_routes_to_auditor_when_discovered_methods_present(self) -> None:
+        """Routes to assumption_auditor when discovered_methods exist."""
+        state = ResearchState(
+            query="test",
+            sub_tasks=[SubTask(description="t", methods_to_audit=[])],
+            discovered_methods=["Unconfoundedness"],
+        )
+        assert _should_audit_assumptions(state) == "assumption_auditor"
+
     def test_routes_to_synthesis_with_empty_subtasks(self) -> None:
         """Handles empty sub_tasks list."""
         state = ResearchState(query="test", sub_tasks=[])
@@ -155,6 +164,22 @@ class TestEndToEnd:
             confidence_reasoning="Few sources available on RAG.",
         )
 
+        # Override graph_neighborhood to return NO ASSUMPTION/THEOREM neighbors
+        # so auto-discovery doesn't trigger the auditor
+        import json
+
+        mock_mcp.graph_neighborhood.return_value = json.dumps(
+            {
+                "center": {"id": "concept-rag-001", "name": "RAG", "type": "METHOD"},
+                "nodes": [
+                    {"name": "Dense retrieval", "type": "METHOD"},
+                    {"name": "Chunk size", "type": "PARAMETER"},
+                ],
+                "edges": [],
+                "relationship_type_counts": {},
+            }
+        )
+
         with (
             patch("research_agent.nodes.query_planner.create_llm") as mock_planner_cls,
             patch("research_agent.nodes.synthesis.create_llm") as mock_synth_cls,
@@ -170,7 +195,8 @@ class TestEndToEnd:
             graph = build_graph(e2e_config, mock_mcp)
             result = await graph.ainvoke(ResearchState(query="How does RAG work?"))
 
-        # Assumption auditor should NOT have been called
+        # Assumption auditor should NOT have been called (no planner methods,
+        # no ASSUMPTION/THEOREM neighbors in graph)
         assert mock_mcp.audit_assumptions.call_count == 0
         assert result["report"] is not None
 

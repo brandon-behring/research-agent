@@ -43,15 +43,17 @@ logger = logging.getLogger(__name__)
 def _should_audit_assumptions(state: ResearchState) -> str:
     """Route to assumption auditor only if methods were identified.
 
+    Checks both planner-specified methods and auto-discovered methods
+    from concept_explorer's graph traversal.
+
     Args:
         state: Current state after concept exploration.
 
     Returns:
         'assumption_auditor' if methods exist, 'synthesis' otherwise.
     """
-    methods = []
-    for task in state.sub_tasks:
-        methods.extend(task.methods_to_audit)
+    methods = [m for task in state.sub_tasks for m in task.methods_to_audit]
+    methods.extend(state.discovered_methods)
 
     if methods:
         return "assumption_auditor"

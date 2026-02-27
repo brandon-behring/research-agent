@@ -278,6 +278,101 @@ class TestConceptExplorer:
         # Name is the original input (not enriched)
         assert concept.name == "double machine learning"
 
+    @pytest.mark.asyncio
+    async def test_auto_discovers_assumption_theorem_neighbors(
+        self, test_config: AgentConfig, mock_mcp: ResearchKBClient
+    ) -> None:
+        """Auto-discovers ASSUMPTION/THEOREM type neighbors as methods."""
+        state = ResearchState(
+            query="test",
+            sub_tasks=[
+                SubTask(description="t", concepts_to_explore=["double machine learning"]),
+            ],
+        )
+        result = await concept_explorer(state, test_config, mock_mcp)
+
+        # The mock graph_neighborhood returns Unconfoundedness (ASSUMPTION),
+        # Overlap condition (ASSUMPTION), and Neyman orthogonality (THEOREM)
+        assert "discovered_methods" in result
+        discovered = result["discovered_methods"]
+        assert len(discovered) == 3  # capped at _MAX_DISCOVERED_METHODS=3
+        names_lower = [m.lower() for m in discovered]
+        assert "unconfoundedness" in names_lower
+        assert "overlap condition" in names_lower
+        assert "neyman orthogonality" in names_lower
+
+    @pytest.mark.asyncio
+    async def test_discovery_caps_at_max(
+        self, test_config: AgentConfig, mock_mcp: ResearchKBClient
+    ) -> None:
+        """Auto-discovery respects _MAX_DISCOVERED_METHODS cap."""
+        import json
+
+        mock_mcp.graph_neighborhood.return_value = json.dumps(
+            {
+                "center": {"id": "c1", "name": "test", "type": "METHOD"},
+                "nodes": [{"name": f"Assumption {i}", "type": "ASSUMPTION"} for i in range(10)],
+                "edges": [],
+                "relationship_type_counts": {},
+            }
+        )
+        state = ResearchState(
+            query="test",
+            sub_tasks=[SubTask(description="t", concepts_to_explore=["test"])],
+        )
+        result = await concept_explorer(state, test_config, mock_mcp)
+
+        # Should be capped at 3
+        assert len(result["discovered_methods"]) == 3
+
+    @pytest.mark.asyncio
+    async def test_no_discovery_when_no_assumption_neighbors(
+        self, test_config: AgentConfig, mock_mcp: ResearchKBClient
+    ) -> None:
+        """No discovered_methods when graph has no ASSUMPTION/THEOREM neighbors."""
+        import json
+
+        mock_mcp.graph_neighborhood.return_value = json.dumps(
+            {
+                "center": {"id": "c1", "name": "RAG", "type": "METHOD"},
+                "nodes": [
+                    {"name": "Dense retrieval", "type": "METHOD"},
+                    {"name": "Chunk size", "type": "PARAMETER"},
+                ],
+                "edges": [],
+                "relationship_type_counts": {},
+            }
+        )
+        state = ResearchState(
+            query="test",
+            sub_tasks=[SubTask(description="t", concepts_to_explore=["RAG"])],
+        )
+        result = await concept_explorer(state, test_config, mock_mcp)
+
+        assert result["discovered_methods"] == []
+
+    @pytest.mark.asyncio
+    async def test_discovery_deduplicates_across_concepts(
+        self, test_config: AgentConfig, mock_mcp: ResearchKBClient
+    ) -> None:
+        """Duplicate ASSUMPTION names across concepts are deduplicated."""
+        # Both concepts return the same ASSUMPTION neighbor
+        state = ResearchState(
+            query="test",
+            sub_tasks=[
+                SubTask(
+                    description="t",
+                    concepts_to_explore=["DML", "cross-fitting"],
+                ),
+            ],
+        )
+        # max_concepts=3 in test_config, both will be explored
+        result = await concept_explorer(state, test_config, mock_mcp)
+
+        # "Unconfoundedness" appears in both neighborhoods but should be deduped
+        names_lower = [m.lower() for m in result["discovered_methods"]]
+        assert names_lower.count("unconfoundedness") == 1
+
 
 class TestCitationAnalyzer:
     """Tests for the citation analyzer node."""
@@ -427,6 +522,90 @@ class TestAssumptionAuditor:
 
         assert len(result["assumption_audits"]) == 0
         assert "No statistical methods" in result["assumption_summary"]
+
+    @pytest.mark.asyncio
+    async def test_merges_discovered_methods(
+        self, test_config: AgentConfig, mock_mcp: ResearchKBClient
+    ) -> None:
+        """Includes auto-discovered methods in auditing."""
+        state = ResearchState(
+            query="test",
+            sub_tasks=[SubTask(description="t", methods_to_audit=["DML"])],
+            discovered_methods=["Unconfoundedness", "Overlap condition"],
+        )
+        result = await assumption_auditor(state, test_config, mock_mcp)
+
+        # Should audit 3 unique methods: DML + 2 discovered
+        assert len(result["assumption_audits"]) == 3
+        assert mock_mcp.audit_assumptions.call_count == 3
+
+    @pytest.mark.asyncio
+    async def test_deduplicates_discovered_against_planner(
+        self, test_config: AgentConfig, mock_mcp: ResearchKBClient
+    ) -> None:
+        """Discovered methods that overlap with planner methods are deduped."""
+        state = ResearchState(
+            query="test",
+            sub_tasks=[SubTask(description="t", methods_to_audit=["DML"])],
+            discovered_methods=["dml", "Overlap"],  # "dml" duplicates "DML"
+        )
+        result = await assumption_auditor(state, test_config, mock_mcp)
+
+        # Should audit 2 unique methods: DML + Overlap
+        assert len(result["assumption_audits"]) == 2
+        assert mock_mcp.audit_assumptions.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_passes_domain_when_all_subtasks_agree(
+        self, test_config: AgentConfig, mock_mcp: ResearchKBClient
+    ) -> None:
+        """Passes inferred domain to MCP when all sub-tasks share same domain."""
+        state = ResearchState(
+            query="test",
+            sub_tasks=[
+                SubTask(
+                    description="t1",
+                    methods_to_audit=["DML"],
+                    search_domain="causal_inference",
+                ),
+                SubTask(
+                    description="t2",
+                    methods_to_audit=[],
+                    search_domain="causal_inference",
+                ),
+            ],
+        )
+        await assumption_auditor(state, test_config, mock_mcp)
+
+        call_kwargs = mock_mcp.audit_assumptions.call_args
+        assert call_kwargs.kwargs.get("domain") == "causal_inference"
+        assert call_kwargs.kwargs.get("scope") == "applied"
+
+    @pytest.mark.asyncio
+    async def test_no_domain_when_subtasks_disagree(
+        self, test_config: AgentConfig, mock_mcp: ResearchKBClient
+    ) -> None:
+        """No domain passed when sub-tasks have different domains."""
+        state = ResearchState(
+            query="test",
+            sub_tasks=[
+                SubTask(
+                    description="t1",
+                    methods_to_audit=["DML"],
+                    search_domain="causal_inference",
+                ),
+                SubTask(
+                    description="t2",
+                    methods_to_audit=[],
+                    search_domain="time_series",
+                ),
+            ],
+        )
+        await assumption_auditor(state, test_config, mock_mcp)
+
+        call_kwargs = mock_mcp.audit_assumptions.call_args
+        assert call_kwargs.kwargs.get("domain") is None
+        assert call_kwargs.kwargs.get("scope") == "general"
 
     @pytest.mark.asyncio
     async def test_handles_audit_failure(

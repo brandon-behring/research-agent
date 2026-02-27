@@ -76,7 +76,7 @@ async def assumption_auditor(
 
     audited_methods: set[str] = set()
 
-    # Collect and deduplicate methods from sub-tasks
+    # Collect and deduplicate methods from sub-tasks + auto-discovered
     unique_methods: list[str] = []
     for task in state.sub_tasks:
         for method in task.methods_to_audit:
@@ -84,6 +84,18 @@ async def assumption_auditor(
             if method_lower not in audited_methods:
                 audited_methods.add(method_lower)
                 unique_methods.append(method)
+    # Merge auto-discovered methods from concept_explorer
+    for method in state.discovered_methods:
+        method_lower = method.lower()
+        if method_lower not in audited_methods:
+            audited_methods.add(method_lower)
+            unique_methods.append(method)
+            logger.info("Including auto-discovered method: %s", method)
+
+    # Infer domain: if all sub-tasks share the same search_domain, use it
+    domains = {t.search_domain for t in state.sub_tasks if t.search_domain}
+    inferred_domain = domains.pop() if len(domains) == 1 else None
+    audit_scope = "applied" if inferred_domain else "general"
 
     audits: list[AssumptionAudit] = []
 
@@ -92,7 +104,12 @@ async def assumption_auditor(
             # Fan out all audit calls concurrently
             raw_results = await asyncio.gather(
                 *[
-                    mcp.audit_assumptions(method_name=m, include_docstring=True)
+                    mcp.audit_assumptions(
+                        method_name=m,
+                        include_docstring=True,
+                        domain=inferred_domain,
+                        scope=audit_scope,
+                    )
                     for m in unique_methods
                 ],
                 return_exceptions=True,
