@@ -71,11 +71,20 @@ async def _run_streaming(query: str, config: AgentConfig) -> dict[str, str]:
     report = ""
     async for event in stream_research(query, config):
         if event.event_type == "node_end":
-            print(f"  [{event.node_name}] {event.data}", file=sys.stderr)
+            timing = ""
+            if event.duration_ms is not None:
+                timing = f" ({event.duration_ms / 1000:.1f}s)"
+            print(
+                f"  [{event.node_name}] {event.data}{timing}",
+                file=sys.stderr,
+            )
         elif event.event_type == "report_chunk":
             report = event.data
         elif event.event_type == "complete":
-            print(f"  {event.data}", file=sys.stderr)
+            timing = ""
+            if event.duration_ms is not None:
+                timing = f" in {event.duration_ms / 1000:.1f}s"
+            print(f"  {event.data}{timing}", file=sys.stderr)
     return {"report": report}
 
 

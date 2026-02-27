@@ -624,3 +624,40 @@ class TestResilientNode:
 
         wrapped = _make_resilient_node("concept_explorer", my_node, 5)
         assert "concept_explorer" in wrapped.__name__
+
+    @pytest.mark.asyncio
+    async def test_wrapper_injects_duration_ms(self) -> None:
+        """Wrapped function injects node_duration_ms into result."""
+        from research_agent.state import NodeUpdate
+
+        async def fast_node(state: ResearchState) -> NodeUpdate:
+            return NodeUpdate(current_node="test")
+
+        wrapped = _make_resilient_node("concept_explorer", fast_node, 5)
+        state = ResearchState(query="test")
+        result = await wrapped(state)
+        assert "node_duration_ms" in result
+        assert isinstance(result["node_duration_ms"], int)
+        assert result["node_duration_ms"] >= 0
+
+
+class TestStreamEventTiming:
+    """Tests for StreamEvent timing fields."""
+
+    def test_default_timing_fields(self) -> None:
+        """StreamEvent defaults: duration_ms=None, timestamp=0.0."""
+        event = StreamEvent(event_type="node_end", node_name="test", data="ok")
+        assert event.duration_ms is None
+        assert event.timestamp == 0.0
+
+    def test_explicit_timing_fields(self) -> None:
+        """StreamEvent accepts explicit timing values."""
+        event = StreamEvent(
+            event_type="node_end",
+            node_name="test",
+            data="ok",
+            duration_ms=1500,
+            timestamp=12345.678,
+        )
+        assert event.duration_ms == 1500
+        assert event.timestamp == 12345.678

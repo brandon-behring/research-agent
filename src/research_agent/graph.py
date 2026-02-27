@@ -187,6 +187,7 @@ def _make_resilient_node(
             async with asyncio.timeout(timeout_s):
                 result = await node_fn(state)
             elapsed = time.monotonic() - start
+            result["node_duration_ms"] = int(elapsed * 1000)
             logger.debug("Node '%s' completed in %.1fs", name, elapsed)
             return result
         except TimeoutError:
@@ -394,11 +395,15 @@ class StreamEvent:
         event_type: One of 'node_end', 'report_chunk', or 'complete'.
         node_name: The graph node that produced this event.
         data: Human-readable summary or report content.
+        duration_ms: Node execution time in milliseconds (from wrapper).
+        timestamp: Monotonic clock time when event was created.
     """
 
     event_type: str  # "node_end" | "report_chunk" | "complete"
     node_name: str
     data: str
+    duration_ms: int | None = None
+    timestamp: float = 0.0
 
 
 def _summarize_update(node_name: str, update: dict[str, Any]) -> str:
@@ -470,19 +475,40 @@ async def stream_research(
         }
 
         report = ""
+        total_start = time.monotonic()
         async for chunk in graph.astream(
             initial_state,
             config=run_config,  # type: ignore[arg-type]
             stream_mode="updates",
         ):
+            now = time.monotonic()
             # chunk is dict[str, dict] — one key per node that completed
             for node_name, update in chunk.items():
                 summary = _summarize_update(node_name, update)
-                yield StreamEvent(event_type="node_end", node_name=node_name, data=summary)
+                duration_ms = update.get("node_duration_ms")
+                yield StreamEvent(
+                    event_type="node_end",
+                    node_name=node_name,
+                    data=summary,
+                    duration_ms=duration_ms,
+                    timestamp=now,
+                )
 
                 # Emit report content when synthesis completes
                 if node_name == "synthesis" and "report" in update:
                     report = update["report"]
-                    yield StreamEvent(event_type="report_chunk", node_name="synthesis", data=report)
+                    yield StreamEvent(
+                        event_type="report_chunk",
+                        node_name="synthesis",
+                        data=report,
+                        timestamp=now,
+                    )
 
-    yield StreamEvent(event_type="complete", node_name="", data=f"Report: {len(report)} chars")
+        total_ms = int((time.monotonic() - total_start) * 1000)
+    yield StreamEvent(
+        event_type="complete",
+        node_name="",
+        data=f"Report: {len(report)} chars",
+        duration_ms=total_ms,
+        timestamp=time.monotonic(),
+    )

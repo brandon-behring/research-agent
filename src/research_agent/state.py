@@ -243,3 +243,4 @@ class NodeUpdate(TypedDict, total=False):
     report: str
     confidence_assessment: str
     current_node: str
+    node_duration_ms: int  # Injected by _make_resilient_node for timing
