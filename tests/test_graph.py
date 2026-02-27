@@ -31,7 +31,7 @@ from research_agent.graph import (
     stream_research,
 )
 from research_agent.nodes.query_planner import PlannerOutput
-from research_agent.nodes.synthesis import SynthesisReport
+from research_agent.nodes.synthesis import Finding, SynthesisReport
 from research_agent.state import ResearchState, SubTask
 
 
@@ -198,7 +198,10 @@ class TestEndToEnd:
 
         synthesis_output = SynthesisReport(
             executive_summary="DML provides a framework for causal inference.",
-            key_findings=["DML uses cross-fitting", "Requires unconfoundedness"],
+            key_findings=[
+                Finding(text="DML uses cross-fitting", confidence="high", source_count=3),
+                Finding(text="Requires unconfoundedness", confidence="medium", source_count=1),
+            ],
             concept_map="DML -> cross-fitting -> unconfoundedness",
             citation_landscape="Chernozhukov et al. (2018) is foundational.",
             methodological_considerations="Overlap assumption is critical.",
@@ -254,7 +257,9 @@ class TestEndToEnd:
 
         synthesis_output = SynthesisReport(
             executive_summary="RAG combines retrieval with generation.",
-            key_findings=["Dense retrieval outperforms sparse"],
+            key_findings=[
+                Finding(text="Dense retrieval outperforms sparse", confidence="high"),
+            ],
             concept_map="RAG -> retrieval -> generation",
             citation_landscape="Lewis et al. (2020) introduced RAG.",
             methodological_considerations="Chunk size affects quality.",
@@ -381,7 +386,9 @@ class TestStreamResearch:
 
         synthesis_output = SynthesisReport(
             executive_summary="DML provides a framework.",
-            key_findings=["DML uses cross-fitting"],
+            key_findings=[
+                Finding(text="DML uses cross-fitting", confidence="high", source_count=2),
+            ],
             concept_map="DML -> cross-fitting",
             citation_landscape="Chernozhukov et al.",
             methodological_considerations="Overlap is critical.",
@@ -436,7 +443,7 @@ class TestStreamResearch:
 
         synthesis_output = SynthesisReport(
             executive_summary="Test report content.",
-            key_findings=["Finding 1"],
+            key_findings=[Finding(text="Finding 1", confidence="medium")],
             concept_map="A -> B",
             citation_landscape="Cite.",
             methodological_considerations="Method.",
@@ -486,7 +493,7 @@ class TestStreamResearch:
 
         synthesis_output = SynthesisReport(
             executive_summary="Summary.",
-            key_findings=["F"],
+            key_findings=[Finding(text="F", confidence="low")],
             concept_map="A",
             citation_landscape="C",
             methodological_considerations="M",

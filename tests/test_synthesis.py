@@ -7,7 +7,7 @@ Validates that _build_evidence_context() includes:
 
 from __future__ import annotations
 
-from research_agent.nodes.synthesis import _build_evidence_context
+from research_agent.nodes.synthesis import Finding, SynthesisReport, _build_evidence_context
 from research_agent.state import (
     AssumptionAudit,
     ConceptInfo,
@@ -381,3 +381,46 @@ class TestKBContextInMetadata:
         ctx = _build_evidence_context(state)
         assert "KB corpus" not in ctx
         assert "KB domains" not in ctx
+
+
+class TestFindingModel:
+    """Tests for the Finding model and rendering."""
+
+    def test_finding_to_markdown_high_with_sources(self) -> None:
+        """HIGH finding renders with source count."""
+        f = Finding(text="DML uses cross-fitting", confidence="high", source_count=3)
+        assert f.to_markdown() == "[HIGH] (3 sources) DML uses cross-fitting"
+
+    def test_finding_to_markdown_low_no_sources(self) -> None:
+        """LOW finding without source count omits parenthetical."""
+        f = Finding(text="Weak evidence", confidence="low")
+        assert f.to_markdown() == "[LOW] Weak evidence"
+
+    def test_finding_to_markdown_medium(self) -> None:
+        """MEDIUM finding renders correctly."""
+        f = Finding(text="Moderate support", confidence="medium", source_count=1)
+        assert f.to_markdown() == "[MEDIUM] (1 sources) Moderate support"
+
+
+class TestSynthesisReportMarkdown:
+    """Tests for SynthesisReport.to_markdown() with Finding objects."""
+
+    def test_findings_rendered_with_confidence(self) -> None:
+        """Key findings rendered with confidence tags in markdown."""
+        report = SynthesisReport(
+            executive_summary="Summary.",
+            key_findings=[
+                Finding(text="Finding A", confidence="high", source_count=2),
+                Finding(text="Finding B", confidence="low"),
+            ],
+            concept_map="A -> B",
+            citation_landscape="Cite.",
+            methodological_considerations="Method.",
+            gaps_limitations="Gap.",
+            confidence_level="medium",
+            confidence_reasoning="Reasoning.",
+        )
+        md = report.to_markdown()
+        assert "[HIGH] (2 sources) Finding A" in md
+        assert "[LOW] Finding B" in md
+        assert "## Key Findings" in md

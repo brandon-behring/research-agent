@@ -34,12 +34,20 @@ multi-agent research system, produce a structured report.
 
 Your report must include:
 1. **Executive Summary** -- 2-3 sentence overview of findings
-2. **Key Findings** -- Main discoveries, each with supporting citations
+2. **Key Findings** -- Main discoveries, each with:
+   - A confidence level (high/medium/low) reflecting how well-supported the finding is
+   - A count of how many distinct sources support it (source_count)
+   - Supporting citations in the text
 3. **Concept Map** -- How the key concepts relate to each other
 4. **Citation Landscape** -- Seminal papers, recent developments, citation chains
 5. **Methodological Considerations** -- Assumptions, limitations, verification approaches
 6. **Gaps & Limitations** -- What the KB didn't cover, where evidence is thin
 7. **Confidence Assessment** -- How reliable are these findings? (high/medium/low with reasoning)
+
+Finding confidence guidelines:
+- HIGH: Multiple high-scoring sources (>=0.8) directly support this finding
+- MEDIUM: Some sources support it but evidence is indirect or scores are moderate
+- LOW: Few sources, low scores, or finding is inferred rather than directly stated
 
 Citation format: [Author (Year)] with source IDs in footnotes.
 Be honest about gaps -- if few results were found, say so clearly.
@@ -48,11 +56,32 @@ If evidence is sparse or scores are low, acknowledge this explicitly.
 Do NOT hallucinate papers or results not in the evidence provided."""
 
 
+class Finding(BaseModel):
+    """A single research finding with confidence metadata."""
+
+    text: str = Field(description="The finding text with supporting citations")
+    confidence: Literal["high", "medium", "low"] = Field(
+        description="Confidence level for this specific finding"
+    )
+    source_count: int = Field(
+        default=0,
+        description="Number of sources supporting this finding",
+    )
+
+    def to_markdown(self) -> str:
+        """Render finding as markdown with confidence tag."""
+        tag = self.confidence.upper()
+        sources = f" ({self.source_count} sources)" if self.source_count else ""
+        return f"[{tag}]{sources} {self.text}"
+
+
 class SynthesisReport(BaseModel):
     """Structured synthesis report from the LLM."""
 
     executive_summary: str = Field(description="2-3 sentence overview of findings")
-    key_findings: list[str] = Field(description="Main discoveries with supporting citations")
+    key_findings: list[Finding] = Field(
+        description="Main discoveries, each with confidence level and source count",
+    )
     concept_map: str = Field(description="How key concepts relate to each other")
     citation_landscape: str = Field(description="Seminal papers, recent developments, chains")
     methodological_considerations: str = Field(
@@ -66,7 +95,7 @@ class SynthesisReport(BaseModel):
 
     def to_markdown(self) -> str:
         """Render the report as a markdown document."""
-        findings = "\n".join(f"- {f}" for f in self.key_findings)
+        findings = "\n".join(f"- {f.to_markdown()}" for f in self.key_findings)
         return (
             f"# Research Report\n\n"
             f"## Executive Summary\n\n{self.executive_summary}\n\n"
