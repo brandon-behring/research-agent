@@ -27,6 +27,7 @@ from research_agent.graph import (
     _should_audit_assumptions,
     _summarize_update,
     build_graph,
+    run_research,
     stream_research,
 )
 from research_agent.nodes.query_planner import PlannerOutput
@@ -516,6 +517,69 @@ class TestStreamResearch:
         assert events[-1].event_type == "complete"
         assert "chars" in events[-1].data
 
+    @pytest.mark.asyncio
+    async def test_empty_query_raises_planner_error(self) -> None:
+        """Empty query raises PlannerError."""
+        with pytest.raises(PlannerError, match="empty"):
+            async for _ in stream_research(""):
+                pass
+
+    @pytest.mark.asyncio
+    async def test_whitespace_query_raises_planner_error(self) -> None:
+        """Whitespace-only query raises PlannerError."""
+        with pytest.raises(PlannerError, match="empty"):
+            async for _ in stream_research("  \t  "):
+                pass
+
+    @pytest.mark.asyncio
+    async def test_stream_yields_all_event_types(self) -> None:
+        """stream_research yields node_end, report_chunk, complete events."""
+
+        async def _fake_astream(*args, **kwargs):
+            yield {
+                "query_planner": {
+                    "sub_tasks": [{"description": "t1"}],
+                    "node_duration_ms": 100,
+                },
+            }
+            yield {
+                "synthesis": {
+                    "report": "# Test Report",
+                    "node_duration_ms": 200,
+                },
+            }
+
+        with (
+            patch("research_agent.graph.ResearchKBClient") as mock_cls,
+            patch(
+                "research_agent.graph._fetch_kb_context",
+                return_value=([], ""),
+            ),
+            patch("research_agent.graph.build_graph") as mock_build,
+        ):
+            mock_mcp = AsyncMock()
+            mock_cls.return_value.__aenter__ = AsyncMock(
+                return_value=mock_mcp,
+            )
+            mock_cls.return_value.__aexit__ = AsyncMock(
+                return_value=None,
+            )
+            mock_graph = AsyncMock()
+            mock_graph.astream = _fake_astream
+            mock_build.return_value = mock_graph
+
+            events = []
+            async for event in stream_research("What is DML?"):
+                events.append(event)
+
+            types = [e.event_type for e in events]
+            assert "node_end" in types
+            assert "report_chunk" in types
+            assert "complete" in types
+            complete = [e for e in events if e.event_type == "complete"][0]
+            assert complete.duration_ms is not None
+            assert complete.duration_ms >= 0
+
 
 class TestResilientNode:
     """Tests for _make_resilient_node timeout and error handling."""
@@ -640,6 +704,23 @@ class TestResilientNode:
         assert isinstance(result["node_duration_ms"], int)
         assert result["node_duration_ms"] >= 0
 
+    @pytest.mark.asyncio
+    async def test_node_timeout_error_not_caught_by_generic_handler(
+        self,
+    ) -> None:
+        """NodeTimeoutError propagates through except Exception handler."""
+        from research_agent.state import NodeUpdate
+
+        async def raises_nte(state: ResearchState) -> NodeUpdate:
+            raise NodeTimeoutError("inner", 10)
+
+        # Wrap a non-critical node that would normally catch exceptions
+        wrapped = _make_resilient_node("concept_explorer", raises_nte, 5)
+        state = ResearchState(query="test")
+        # NodeTimeoutError is re-raised even for non-critical nodes
+        with pytest.raises(NodeTimeoutError, match="inner"):
+            await wrapped(state)
+
 
 class TestStreamEventTiming:
     """Tests for StreamEvent timing fields."""
@@ -661,3 +742,50 @@ class TestStreamEventTiming:
         )
         assert event.duration_ms == 1500
         assert event.timestamp == 12345.678
+
+
+class TestRunResearch:
+    """Tests for run_research() entry point."""
+
+    @pytest.mark.asyncio
+    async def test_empty_query_raises_planner_error(self) -> None:
+        """Empty query raises PlannerError before touching MCP."""
+        with pytest.raises(PlannerError, match="empty"):
+            await run_research("")
+
+    @pytest.mark.asyncio
+    async def test_whitespace_query_raises_planner_error(self) -> None:
+        """Whitespace-only query raises PlannerError."""
+        with pytest.raises(PlannerError, match="empty"):
+            await run_research("   ")
+
+    @pytest.mark.asyncio
+    async def test_none_config_uses_default(self) -> None:
+        """Passing config=None creates a default AgentConfig."""
+        # Patch MCP to avoid real connection — just verify entry path
+        with (
+            patch(
+                "research_agent.graph.ResearchKBClient",
+            ) as mock_cls,
+            patch(
+                "research_agent.graph._fetch_kb_context",
+                return_value=([], ""),
+            ),
+            patch(
+                "research_agent.graph.build_graph",
+            ) as mock_build,
+        ):
+            mock_mcp = AsyncMock()
+            mock_cls.return_value.__aenter__ = AsyncMock(
+                return_value=mock_mcp,
+            )
+            mock_cls.return_value.__aexit__ = AsyncMock(
+                return_value=None,
+            )
+            mock_graph = AsyncMock()
+            mock_graph.ainvoke.return_value = {"report": "test"}
+            mock_build.return_value = mock_graph
+
+            result = await run_research("What is DML?")
+            assert result["report"] == "test"
+            mock_build.assert_called_once()

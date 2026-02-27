@@ -309,3 +309,52 @@ class TestHealthCheck:
         ):
             result = await _run_health_check(config)
         assert result is False
+
+
+class TestRunStreaming:
+    """Tests for _run_streaming() async helper."""
+
+    @pytest.mark.asyncio
+    async def test_collects_report_from_stream_events(self) -> None:
+        """_run_streaming collects report and prints progress."""
+        from research_agent.cli import _run_streaming
+        from research_agent.config import AgentConfig
+        from research_agent.graph import StreamEvent
+
+        events = [
+            StreamEvent(
+                event_type="node_end",
+                node_name="query_planner",
+                data="Planned 2 sub-tasks",
+                duration_ms=150,
+            ),
+            StreamEvent(
+                event_type="node_end",
+                node_name="synthesis",
+                data="Generated report",
+            ),
+            StreamEvent(
+                event_type="report_chunk",
+                node_name="synthesis",
+                data="# Final Report",
+            ),
+            StreamEvent(
+                event_type="complete",
+                node_name="",
+                data="Report: 14 chars",
+                duration_ms=3000,
+            ),
+        ]
+
+        async def fake_stream(query, config):
+            for e in events:
+                yield e
+
+        config = AgentConfig()
+        with patch(
+            "research_agent.cli.stream_research",
+            side_effect=fake_stream,
+        ):
+            result = await _run_streaming("test query", config)
+
+        assert result["report"] == "# Final Report"

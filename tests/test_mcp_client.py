@@ -634,3 +634,51 @@ class TestCallTool:
 
         # Should have retried 3 times total (tenacity stop_after_attempt(3))
         assert mock_session.call_tool.await_count == 3
+
+
+class TestConnectionErrorPaths:
+    """Tests for error paths during MCP connection setup."""
+
+    @pytest.mark.asyncio
+    async def test_aexit_suppresses_runtime_error(self) -> None:
+        """__aexit__ suppresses RuntimeError from transport cleanup."""
+        config = MCPConfig(transport="http", http_url="http://localhost:8000")
+        client = ResearchKBClient(config)
+
+        # Simulate a stack that raises RuntimeError on exit
+        mock_stack = AsyncMock()
+        mock_stack.__aexit__ = AsyncMock(side_effect=RuntimeError("task group cancelled"))
+        client._stack = mock_stack
+
+        # Should NOT raise — suppresses RuntimeError
+        await client.__aexit__(None, None, None)
+
+    @pytest.mark.asyncio
+    async def test_aexit_suppresses_exception_group(self) -> None:
+        """__aexit__ suppresses BaseExceptionGroup from transport cleanup."""
+        config = MCPConfig(transport="http", http_url="http://localhost:8000")
+        client = ResearchKBClient(config)
+
+        mock_stack = AsyncMock()
+        mock_stack.__aexit__ = AsyncMock(
+            side_effect=BaseExceptionGroup("cleanup", [RuntimeError("x")])
+        )
+        client._stack = mock_stack
+
+        # Should NOT raise — suppresses BaseExceptionGroup
+        await client.__aexit__(None, None, None)
+
+    @pytest.mark.asyncio
+    async def test_unexpected_connection_error_wrapped(self) -> None:
+        """Connection error during __aenter__ is wrapped in MCPConnectionError."""
+        config = MCPConfig(transport="stdio", research_kb_path="/some/path")
+        client = ResearchKBClient(config)
+
+        with (
+            patch(
+                "research_agent.mcp_client.stdio_client",
+                side_effect=TypeError("unexpected"),
+            ),
+            pytest.raises(MCPConnectionError, match="unexpected"),
+        ):
+            await client.__aenter__()
