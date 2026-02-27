@@ -173,3 +173,26 @@ class TestAgentConfig:
             AgentConfig(cache_ttl_hours=0)
         with pytest.raises(ValidationError):
             AgentConfig(cache_ttl_hours=721)
+
+    def test_top_results_for_citations_default(self) -> None:
+        """Default top_results_for_citations is 5."""
+        config = AgentConfig()
+        assert config.top_results_for_citations == 5
+
+    def test_top_results_for_citations_override(self) -> None:
+        """Constructor override for top_results_for_citations."""
+        config = AgentConfig(top_results_for_citations=10)
+        assert config.top_results_for_citations == 10
+
+    def test_top_results_for_citations_bounds(self) -> None:
+        """top_results_for_citations must be in [1, 20]."""
+        with pytest.raises(ValidationError):
+            AgentConfig(top_results_for_citations=0)
+        with pytest.raises(ValidationError):
+            AgentConfig(top_results_for_citations=21)
+
+    def test_top_results_for_citations_env_var(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Loads from TOP_RESULTS_FOR_CITATIONS env var."""
+        monkeypatch.setenv("TOP_RESULTS_FOR_CITATIONS", "8")
+        config = AgentConfig()
+        assert config.top_results_for_citations == 8

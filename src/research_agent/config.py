@@ -129,5 +129,12 @@ class AgentConfig(BaseSettings):
         alias="CACHE_TTL_HOURS",
         description="Hours before cached reports expire",
     )
+    top_results_for_citations: int = Field(
+        default=5,
+        ge=1,
+        le=20,
+        alias="TOP_RESULTS_FOR_CITATIONS",
+        description="Number of top search results to analyze for citation networks",
+    )
 
     model_config = {"frozen": True, "populate_by_name": True}

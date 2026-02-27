@@ -32,12 +32,33 @@ class SubTask(BaseModel):
         default_factory=list,
         description="Statistical methods whose assumptions should be checked",
     )
+    search_domain: str = Field(
+        default="",
+        description="KB domain filter (causal_inference, time_series, or empty for cross-domain)",
+    )
+    search_context: str = Field(
+        default="balanced",
+        description="Search weighting (building, auditing, balanced)",
+    )
+    connections_to_explain: list[list[str]] = Field(
+        default_factory=list,
+        description="Concept pairs for explain_connection, e.g. [['DML', 'cross-fitting']]",
+    )
 
     @field_validator("search_queries", mode="before")
     @classmethod
     def strip_empty_queries(cls, v: list[str]) -> list[str]:
         """Remove empty or whitespace-only search queries."""
         return [q.strip() for q in v if q and q.strip()]
+
+    @field_validator("search_context", mode="before")
+    @classmethod
+    def validate_search_context(cls, v: str) -> str:
+        """Constrain search_context to known values."""
+        allowed = ("balanced", "building", "auditing", "")
+        if v not in allowed:
+            raise ValueError(f"search_context must be one of {allowed}, got '{v}'")
+        return v
 
 
 class SearchResult(BaseModel):
@@ -142,6 +163,18 @@ class ResearchState(BaseModel):
     assumption_audits: list[AssumptionAudit] = Field(default_factory=list)
     assumption_summary: str = ""
 
+    # --- Discovered from graph (concept_explorer → assumption_auditor) ---
+    discovered_methods: list[str] = Field(
+        default_factory=list,
+        description="Methods/assumptions auto-discovered from knowledge graph neighbors",
+    )
+
+    # --- Connection Explorer output ---
+    connection_explanations: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description="Concept path explanations from explain_connection",
+    )
+
     # --- Synthesis output ---
     report: str = ""
     confidence_assessment: str = ""
@@ -166,6 +199,8 @@ class NodeUpdate(TypedDict, total=False):
     citation_summary: str
     assumption_audits: list[AssumptionAudit]
     assumption_summary: str
+    discovered_methods: list[str]
+    connection_explanations: list[dict[str, Any]]
     report: str
     confidence_assessment: str
     current_node: str

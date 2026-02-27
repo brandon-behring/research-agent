@@ -51,6 +51,41 @@ class TestSubTask:
         with pytest.raises(ValidationError):
             task.description = "changed"
 
+    def test_search_domain_defaults_empty(self) -> None:
+        """search_domain defaults to empty string (cross-domain)."""
+        task = SubTask(description="test")
+        assert task.search_domain == ""
+
+    def test_search_context_defaults_balanced(self) -> None:
+        """search_context defaults to 'balanced'."""
+        task = SubTask(description="test")
+        assert task.search_context == "balanced"
+
+    def test_search_context_accepts_valid_values(self) -> None:
+        """search_context accepts building, auditing, balanced, empty."""
+        for ctx in ("balanced", "building", "auditing", ""):
+            task = SubTask(description="test", search_context=ctx)
+            assert task.search_context == ctx
+
+    def test_search_context_rejects_invalid(self) -> None:
+        """search_context rejects unknown values."""
+        with pytest.raises(ValidationError, match="search_context"):
+            SubTask(description="test", search_context="invalid")
+
+    def test_connections_to_explain_defaults_empty(self) -> None:
+        """connections_to_explain defaults to empty list."""
+        task = SubTask(description="test")
+        assert task.connections_to_explain == []
+
+    def test_connections_to_explain_accepts_pairs(self) -> None:
+        """connections_to_explain accepts list of concept pairs."""
+        task = SubTask(
+            description="test",
+            connections_to_explain=[["DML", "cross-fitting"], ["IV", "LATE"]],
+        )
+        assert len(task.connections_to_explain) == 2
+        assert task.connections_to_explain[0] == ["DML", "cross-fitting"]
+
     def test_serialization_roundtrip(self) -> None:
         """SubTask survives JSON serialization/deserialization."""
         task = SubTask(
@@ -58,6 +93,9 @@ class TestSubTask:
             search_queries=["double machine learning"],
             concepts_to_explore=["DML"],
             methods_to_audit=["DML"],
+            search_domain="causal_inference",
+            search_context="auditing",
+            connections_to_explain=[["DML", "cross-fitting"]],
         )
         data = task.model_dump()
         reconstructed = SubTask(**data)
@@ -161,14 +199,28 @@ class TestResearchState:
         s.query = "changed"
         assert s.query == "changed"
 
+    def test_discovered_methods_defaults_empty(self) -> None:
+        """discovered_methods defaults to empty list."""
+        s = ResearchState()
+        assert s.discovered_methods == []
+
+    def test_connection_explanations_defaults_empty(self) -> None:
+        """connection_explanations defaults to empty list."""
+        s = ResearchState()
+        assert s.connection_explanations == []
+
     def test_serialization_roundtrip(self) -> None:
         """Full state survives serialization."""
         s = ResearchState(
             query="test",
             sub_tasks=[SubTask(description="t1")],
             report="# Report",
+            discovered_methods=["DML", "IV"],
+            connection_explanations=[{"concept_a": "A", "concept_b": "B"}],
         )
         data = s.model_dump()
         reconstructed = ResearchState(**data)
         assert reconstructed.query == s.query
         assert len(reconstructed.sub_tasks) == 1
+        assert reconstructed.discovered_methods == ["DML", "IV"]
+        assert len(reconstructed.connection_explanations) == 1
