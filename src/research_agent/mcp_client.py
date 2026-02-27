@@ -13,8 +13,9 @@ Architecture:
         6. biblio_coupling  -- related papers via shared reference overlap
         7. audit_assumptions -- method assumption documentation
 
-    Each method returns the raw markdown string from research-kb.
-    Agent nodes parse what they need from the structured markdown.
+    Each method requests JSON output (``output_format='json'``) and returns
+    the raw JSON string. Agent nodes parse with ``json.loads()`` and fall
+    back to markdown parsing on failure.
 
 Resilience:
     - Retries with exponential backoff on MCPToolError (3 attempts)
@@ -79,6 +80,7 @@ class ResearchKBClient:
             await self._stack.aclose()
             raise
         except Exception:
+            logger.exception("Unexpected error during MCP connection setup")
             await self._stack.aclose()
             raise
         return self
@@ -105,7 +107,8 @@ class ResearchKBClient:
         Raises:
             MCPConnectionError: If RESEARCH_KB_PATH is not set or connection fails.
         """
-        assert self._stack is not None
+        if self._stack is None:
+            raise RuntimeError("_connect_stdio() called outside __aenter__ context")
 
         if not self._config.research_kb_path:
             raise MCPConnectionError(
@@ -140,7 +143,8 @@ class ResearchKBClient:
         Raises:
             MCPConnectionError: If http_url is empty or connection fails.
         """
-        assert self._stack is not None
+        if self._stack is None:
+            raise RuntimeError("_connect_http() called outside __aenter__ context")
 
         if not self._config.http_url:
             raise MCPConnectionError(
@@ -224,7 +228,7 @@ class ResearchKBClient:
             use_rerank: Apply cross-encoder reranking.
 
         Returns:
-            Markdown-formatted search results with scores.
+            JSON string with search results and scores.
         """
         args: dict[str, Any] = {
             "query": query,
@@ -232,6 +236,7 @@ class ResearchKBClient:
             "context_type": context_type,
             "use_graph": use_graph,
             "use_rerank": use_rerank,
+            "output_format": "json",
         }
         if domain:
             args["domain"] = domain
@@ -251,9 +256,9 @@ class ResearchKBClient:
             domain: Optional domain filter.
 
         Returns:
-            Markdown-formatted results (vector similarity only).
+            JSON string with results (vector similarity only).
         """
-        args: dict[str, Any] = {"query": query, "limit": limit}
+        args: dict[str, Any] = {"query": query, "limit": limit, "output_format": "json"}
         if domain:
             args["domain"] = domain
         return await self._call_tool("research_kb_fast_search", args)
@@ -272,11 +277,15 @@ class ResearchKBClient:
             include_relationships: Include REQUIRES/USES/ADDRESSES edges.
 
         Returns:
-            Markdown with concept description and relationships.
+            JSON string with concept description and relationships.
         """
         return await self._call_tool(
             "research_kb_get_concept",
-            {"concept_id": concept_id, "include_relationships": include_relationships},
+            {
+                "concept_id": concept_id,
+                "include_relationships": include_relationships,
+                "output_format": "json",
+            },
         )
 
     async def graph_neighborhood(
@@ -293,11 +302,11 @@ class ResearchKBClient:
             limit: Maximum connected concepts.
 
         Returns:
-            Markdown with connected concepts and relationship summary.
+            JSON string with connected concepts and relationship summary.
         """
         return await self._call_tool(
             "research_kb_graph_neighborhood",
-            {"concept_name": concept_name, "hops": hops, "limit": limit},
+            {"concept_name": concept_name, "hops": hops, "limit": limit, "output_format": "json"},
         )
 
     # -- Citation tools -------------------------------------------------------
@@ -314,11 +323,11 @@ class ResearchKBClient:
             limit: Maximum sources per direction.
 
         Returns:
-            Markdown with citing/cited-by lists.
+            JSON string with citing/cited-by lists.
         """
         return await self._call_tool(
             "research_kb_citation_network",
-            {"source_id": source_id, "limit": limit},
+            {"source_id": source_id, "limit": limit, "output_format": "json"},
         )
 
     async def biblio_coupling(
@@ -335,11 +344,16 @@ class ResearchKBClient:
             min_coupling: Minimum Jaccard threshold (0.0-1.0).
 
         Returns:
-            Markdown with bibliographically similar sources.
+            JSON string with bibliographically similar sources.
         """
         return await self._call_tool(
             "research_kb_biblio_coupling",
-            {"source_id": source_id, "limit": limit, "min_coupling": min_coupling},
+            {
+                "source_id": source_id,
+                "limit": limit,
+                "min_coupling": min_coupling,
+                "output_format": "json",
+            },
         )
 
     # -- Assumption tools -------------------------------------------------------
@@ -356,9 +370,13 @@ class ResearchKBClient:
             include_docstring: Include Python docstring snippet.
 
         Returns:
-            Markdown with assumptions, violation consequences, verification approaches.
+            JSON string with assumptions, violation consequences, verification approaches.
         """
         return await self._call_tool(
             "research_kb_audit_assumptions",
-            {"method_name": method_name, "include_docstring": include_docstring},
+            {
+                "method_name": method_name,
+                "include_docstring": include_docstring,
+                "output_format": "json",
+            },
         )

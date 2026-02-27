@@ -43,6 +43,8 @@ Your report must include:
 
 Citation format: [Author (Year)] with source IDs in footnotes.
 Be honest about gaps -- if few results were found, say so clearly.
+Use the Evidence Quality Metadata section to calibrate your confidence assessment.
+If evidence is sparse or scores are low, acknowledge this explicitly.
 Do NOT hallucinate papers or results not in the evidence provided."""
 
 
@@ -94,6 +96,19 @@ def _build_evidence_context(state: ResearchState) -> str:
     sections.append(f"## Research Question\n{state.query}")
     sections.append(f"## Planning Rationale\n{state.planning_rationale}")
 
+    # Node summaries -- high-level signals from earlier analysis
+    summaries = []
+    if state.search_summary:
+        summaries.append(f"- **Literature**: {state.search_summary}")
+    if state.concept_map_summary:
+        summaries.append(f"- **Concepts**: {state.concept_map_summary}")
+    if state.citation_summary:
+        summaries.append(f"- **Citations**: {state.citation_summary}")
+    if state.assumption_summary:
+        summaries.append(f"- **Assumptions**: {state.assumption_summary}")
+    if summaries:
+        sections.append("## Analysis Overview\n" + "\n".join(summaries))
+
     # Search results
     if state.search_results:
         search_lines = [f"## Literature Search ({len(state.search_results)} results)"]
@@ -143,6 +158,53 @@ def _build_evidence_context(state: ResearchState) -> str:
             audit_lines.append(f"\n### {a.method_name}\n{a.raw_output}")
         sections.append("\n".join(audit_lines))
 
+    # Evidence quality metadata -- helps LLM calibrate confidence
+    meta_lines = ["## Evidence Quality Metadata"]
+
+    # Search coverage
+    total_results = len(state.search_results)
+    if total_results == 0:
+        meta_lines.append("- **WARNING: No search results found** -- report is based on KB gaps")
+    elif total_results < 3:
+        meta_lines.append(f"- **Sparse evidence**: only {total_results} results found")
+    else:
+        avg_score = sum(r.score for r in state.search_results) / total_results
+        meta_lines.append(f"- Search: {total_results} results, avg score {avg_score:.2f}")
+
+    # Score distribution
+    if state.search_results:
+        high = sum(1 for r in state.search_results if r.score >= 0.8)
+        med = sum(1 for r in state.search_results if 0.5 <= r.score < 0.8)
+        low = sum(1 for r in state.search_results if r.score < 0.5)
+        meta_lines.append(
+            f"- Score distribution: {high} high (>=0.8), {med} medium, {low} low (<0.5)"
+        )
+
+    # Year recency
+    if state.search_results:
+        years = [int(r.year) for r in state.search_results if r.year.isdigit()]
+        if years:
+            meta_lines.append(f"- Year range: {min(years)}-{max(years)}")
+
+    # Concept coverage
+    total_concepts = len(state.concepts)
+    concepts_with_detail = sum(1 for c in state.concepts if c.description)
+    if total_concepts > 0:
+        meta_lines.append(
+            f"- Concepts: {total_concepts} explored, {concepts_with_detail} with full detail"
+        )
+
+    # Assumption coverage
+    total_audits = len(state.assumption_audits)
+    audits_with_assumptions = sum(1 for a in state.assumption_audits if a.assumptions)
+    if total_audits > 0:
+        meta_lines.append(
+            f"- Assumptions: {total_audits} methods audited, "
+            f"{audits_with_assumptions} with structured assumptions"
+        )
+
+    sections.append("\n".join(meta_lines))
+
     return "\n\n---\n\n".join(sections)
 
 
@@ -181,7 +243,8 @@ async def synthesis_writer(state: ResearchState, config: AgentConfig) -> NodeUpd
                     ),
                 ]
             )
-            assert isinstance(result, SynthesisReport)
+            if not isinstance(result, SynthesisReport):
+                raise SynthesisError(f"Expected SynthesisReport, got {type(result).__name__}")
     except TimeoutError as e:
         raise SynthesisError(f"Synthesis timed out after {timeout_s}s") from e
     except Exception as e:

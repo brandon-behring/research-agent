@@ -10,12 +10,14 @@ fallback in two scenarios:
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import re
 
 from research_agent.config import AgentConfig
 from research_agent.exceptions import MCPToolError, SearchError
 from research_agent.mcp_client import ResearchKBClient
+from research_agent.parsing import parse_json_first
 from research_agent.state import NodeUpdate, ResearchState, SearchResult
 
 logger = logging.getLogger(__name__)
@@ -30,8 +32,54 @@ _CONCURRENCY_LIMIT = 3
 _MIN_SPARSE_THRESHOLD = 2
 
 
-def _parse_search_results(markdown: str) -> list[SearchResult]:
+def _parse_search_results_json(raw: str) -> list[SearchResult]:
+    """Parse JSON search output from research-kb into structured results.
+
+    Expected JSON schema::
+
+        {
+            "results": [
+                {
+                    "title": "...", "content": "...", "source_id": "...",
+                    "authors": "...", "year": 2018, "chunk_id": "...",
+                    "scores": {"combined": 0.892, ...}
+                }
+            ]
+        }
+
+    Args:
+        raw: JSON string from research_kb_search.
+
+    Returns:
+        List of SearchResult objects.
+
+    Raises:
+        json.JSONDecodeError: If raw is not valid JSON.
+    """
+    data = json.loads(raw)
+    results: list[SearchResult] = []
+    for item in data.get("results", []):
+        scores = item.get("scores", {})
+        raw_score = scores.get("combined", 0.0) if isinstance(scores, dict) else 0.0
+        score = min(max(float(raw_score), 0.0), 1.0)
+        results.append(
+            SearchResult(
+                title=item.get("title", ""),
+                content=item.get("content", ""),
+                source_id=item.get("source_id", ""),
+                score=score,
+                authors=item.get("authors", ""),
+                year=str(item.get("year", "")),
+                chunk_id=item.get("chunk_id", ""),
+            )
+        )
+    return results
+
+
+def _parse_search_results_markdown(markdown: str) -> list[SearchResult]:
     """Parse research-kb's markdown search output into structured results.
+
+    Retained as fallback when JSON parsing fails.
 
     Expected format from research-kb::
 
@@ -47,9 +95,6 @@ def _parse_search_results(markdown: str) -> list[SearchResult]:
     Returns:
         List of SearchResult objects extracted from the markdown.
     """
-    if not markdown or not markdown.strip():
-        return []
-
     results: list[SearchResult] = []
 
     # Split on "### N." headers
@@ -109,6 +154,25 @@ def _parse_search_results(markdown: str) -> list[SearchResult]:
             logger.warning("Failed to construct SearchResult for '%s': %s", title, e)
 
     return results
+
+
+def _parse_search_results(raw: str) -> list[SearchResult]:
+    """Parse search results with JSON-first strategy and markdown fallback.
+
+    Args:
+        raw: Raw response string (JSON or markdown) from research-kb.
+
+    Returns:
+        List of SearchResult objects.
+    """
+    if not raw or not raw.strip():
+        return []
+    return parse_json_first(
+        raw,
+        _parse_search_results_json,
+        _parse_search_results_markdown,
+        context="search results",
+    )
 
 
 async def _search_one(

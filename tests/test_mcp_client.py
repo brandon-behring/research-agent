@@ -249,6 +249,151 @@ class TestHTTPTransport:
         assert url == "http://localhost:8000/v1/mcp"
 
 
+class TestToolArgumentForwarding:
+    """Verify each tool method forwards correct arguments to _call_tool."""
+
+    @pytest.fixture
+    def connected_client(self) -> tuple[ResearchKBClient, AsyncMock]:
+        """Client with injected mock session."""
+        config = MCPConfig(transport="stdio", research_kb_path="/fake")
+        client = ResearchKBClient(config)
+        session = AsyncMock()
+        text_block = SimpleNamespace(text='{"results": []}')
+        session.call_tool.return_value = SimpleNamespace(content=[text_block], isError=False)
+        client._session = session
+        return client, session
+
+    @pytest.mark.asyncio
+    async def test_search_forwards_all_args(
+        self, connected_client: tuple[ResearchKBClient, AsyncMock]
+    ) -> None:
+        """search() forwards all parameters including optional domain."""
+        client, session = connected_client
+        await client.search(
+            query="DML",
+            limit=5,
+            domain="causal_inference",
+            context_type="auditing",
+            use_graph=False,
+            use_rerank=False,
+        )
+        session.call_tool.assert_awaited_once_with(
+            "research_kb_search",
+            {
+                "query": "DML",
+                "limit": 5,
+                "domain": "causal_inference",
+                "context_type": "auditing",
+                "use_graph": False,
+                "use_rerank": False,
+                "output_format": "json",
+            },
+        )
+
+    @pytest.mark.asyncio
+    async def test_search_omits_domain_when_none(
+        self, connected_client: tuple[ResearchKBClient, AsyncMock]
+    ) -> None:
+        """search() excludes domain from args when None."""
+        client, session = connected_client
+        await client.search(query="DML", limit=10)
+        args = session.call_tool.call_args[0][1]
+        assert "domain" not in args
+        assert args["query"] == "DML"
+        assert args["output_format"] == "json"
+
+    @pytest.mark.asyncio
+    async def test_fast_search_forwards_args(
+        self, connected_client: tuple[ResearchKBClient, AsyncMock]
+    ) -> None:
+        """fast_search() forwards query, limit, and optional domain."""
+        client, session = connected_client
+        await client.fast_search(query="IV", limit=3, domain="causal_inference")
+        session.call_tool.assert_awaited_once_with(
+            "research_kb_fast_search",
+            {"query": "IV", "limit": 3, "domain": "causal_inference", "output_format": "json"},
+        )
+
+    @pytest.mark.asyncio
+    async def test_fast_search_omits_domain_when_none(
+        self, connected_client: tuple[ResearchKBClient, AsyncMock]
+    ) -> None:
+        """fast_search() excludes domain from args when None."""
+        client, session = connected_client
+        await client.fast_search(query="DML", limit=5)
+        args = session.call_tool.call_args[0][1]
+        assert "domain" not in args
+
+    @pytest.mark.asyncio
+    async def test_get_concept_forwards_args(
+        self, connected_client: tuple[ResearchKBClient, AsyncMock]
+    ) -> None:
+        """get_concept() forwards concept_id and include_relationships."""
+        client, session = connected_client
+        await client.get_concept("concept-dml-001", include_relationships=False)
+        session.call_tool.assert_awaited_once_with(
+            "research_kb_get_concept",
+            {
+                "concept_id": "concept-dml-001",
+                "include_relationships": False,
+                "output_format": "json",
+            },
+        )
+
+    @pytest.mark.asyncio
+    async def test_graph_neighborhood_forwards_args(
+        self, connected_client: tuple[ResearchKBClient, AsyncMock]
+    ) -> None:
+        """graph_neighborhood() forwards concept_name, hops, limit."""
+        client, session = connected_client
+        await client.graph_neighborhood(concept_name="DML", hops=3, limit=20)
+        session.call_tool.assert_awaited_once_with(
+            "research_kb_graph_neighborhood",
+            {"concept_name": "DML", "hops": 3, "limit": 20, "output_format": "json"},
+        )
+
+    @pytest.mark.asyncio
+    async def test_citation_network_forwards_args(
+        self, connected_client: tuple[ResearchKBClient, AsyncMock]
+    ) -> None:
+        """citation_network() forwards source_id and limit."""
+        client, session = connected_client
+        await client.citation_network(source_id="src-001", limit=15)
+        session.call_tool.assert_awaited_once_with(
+            "research_kb_citation_network",
+            {"source_id": "src-001", "limit": 15, "output_format": "json"},
+        )
+
+    @pytest.mark.asyncio
+    async def test_biblio_coupling_forwards_args(
+        self, connected_client: tuple[ResearchKBClient, AsyncMock]
+    ) -> None:
+        """biblio_coupling() forwards source_id, limit, and min_coupling."""
+        client, session = connected_client
+        await client.biblio_coupling(source_id="src-001", limit=5, min_coupling=0.2)
+        session.call_tool.assert_awaited_once_with(
+            "research_kb_biblio_coupling",
+            {
+                "source_id": "src-001",
+                "limit": 5,
+                "min_coupling": 0.2,
+                "output_format": "json",
+            },
+        )
+
+    @pytest.mark.asyncio
+    async def test_audit_assumptions_forwards_args(
+        self, connected_client: tuple[ResearchKBClient, AsyncMock]
+    ) -> None:
+        """audit_assumptions() forwards method_name and include_docstring."""
+        client, session = connected_client
+        await client.audit_assumptions(method_name="DML", include_docstring=False)
+        session.call_tool.assert_awaited_once_with(
+            "research_kb_audit_assumptions",
+            {"method_name": "DML", "include_docstring": False, "output_format": "json"},
+        )
+
+
 class TestCallTool:
     """Tests for _call_tool method -- retry logic and error handling."""
 

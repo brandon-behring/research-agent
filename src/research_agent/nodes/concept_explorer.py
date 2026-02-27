@@ -8,12 +8,15 @@ Also extracts concept IDs from search results for deeper exploration.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import re
+from typing import Any
 
 from research_agent.config import AgentConfig
 from research_agent.exceptions import MCPToolError
 from research_agent.mcp_client import ResearchKBClient
+from research_agent.parsing import parse_json_first
 from research_agent.state import ConceptInfo, NodeUpdate, ResearchState
 
 logger = logging.getLogger(__name__)
@@ -28,8 +31,45 @@ _DEFAULT_HOPS = 2
 _DEFAULT_NEIGHBOR_LIMIT = 30
 
 
-def _parse_concept_detail(markdown: str) -> ConceptInfo | None:
-    """Parse a concept detail response into ConceptInfo.
+def _parse_concept_detail_json(raw: str) -> ConceptInfo | None:
+    """Parse JSON concept detail response into ConceptInfo.
+
+    Expected JSON schema::
+
+        {
+            "concept_id": "...", "name": "...", "concept_type": "METHOD",
+            "definition": "...",
+            "relationships": [{"type": "REQUIRES", "target_id": "..."}]
+        }
+
+    Note: JSON key ``definition`` maps to ``ConceptInfo.description``.
+
+    Args:
+        raw: JSON string from research_kb_get_concept.
+
+    Returns:
+        ConceptInfo or None if required fields are missing.
+
+    Raises:
+        json.JSONDecodeError: If raw is not valid JSON.
+    """
+    data = json.loads(raw)
+    return ConceptInfo(
+        concept_id=data.get("concept_id", ""),
+        name=data.get("name", ""),
+        concept_type=data.get("concept_type", ""),
+        description=data.get("definition", ""),
+        relationships=[
+            {"type": r.get("type", ""), "target_id": r.get("target_id", "")}
+            for r in data.get("relationships", [])
+        ],
+    )
+
+
+def _parse_concept_detail_markdown(markdown: str) -> ConceptInfo | None:
+    """Parse a concept detail markdown response into ConceptInfo.
+
+    Retained as fallback when JSON parsing fails.
 
     Expected format from research-kb::
 
@@ -105,6 +145,59 @@ def _parse_concept_detail(markdown: str) -> ConceptInfo | None:
         return None
 
 
+def _parse_concept_detail(raw: str) -> ConceptInfo | None:
+    """Parse concept detail with JSON-first strategy and markdown fallback.
+
+    Args:
+        raw: Raw response string (JSON or markdown) from research-kb.
+
+    Returns:
+        ConceptInfo or None if parsing fails entirely.
+    """
+    if not raw or not raw.strip():
+        return None
+    return parse_json_first(
+        raw,
+        _parse_concept_detail_json,
+        _parse_concept_detail_markdown,
+        context="concept detail",
+    )
+
+
+def _build_neighborhood_summary(data: dict[str, Any]) -> str:
+    """Build a human-readable neighborhood summary from JSON data.
+
+    Produces formatted markdown suitable for synthesis LLM context
+    (``synthesis.py:112-113`` feeds ``c.neighborhood_summary`` directly).
+
+    Args:
+        data: Parsed JSON dict from research_kb_graph_neighborhood.
+
+    Returns:
+        Formatted markdown summary string.
+    """
+    center = data.get("center", {})
+    nodes = data.get("nodes", [])
+    edges = data.get("edges", [])
+    type_counts = data.get("relationship_type_counts", {})
+
+    lines = [
+        f"## Graph Neighborhood: {center.get('name', 'Unknown')}",
+        f"*Type: {center.get('type', '')} | ID: `{center.get('id', '')}`*",
+        f"\n**{len(nodes)} connected concepts, {len(edges)} relationships**",
+        "\n### Connected Concepts",
+    ]
+    for node in nodes:
+        lines.append(f"- {node.get('name', '?')} [{node.get('type', '')}]")
+
+    if type_counts:
+        lines.append("\n### Relationships")
+        for rtype, count in type_counts.items():
+            lines.append(f"- {rtype}: {count}")
+
+    return "\n".join(lines)
+
+
 async def _explore_one(
     mcp: ResearchKBClient,
     name: str,
@@ -133,12 +226,17 @@ async def _explore_one(
         )
         logger.info("Explored neighborhood for concept: %s", name)
 
-        # Extract concept_id from neighborhood header if present
-        # Format: *Type: METHOD | ID: `concept-dml-001`*
+        # Extract concept_id and build summary — JSON-first with markdown fallback
         concept_id = ""
-        id_match = re.search(r"ID:\s*`([^`]+)`", raw)
-        if id_match:
-            concept_id = id_match.group(1)
+        neighborhood_summary = raw  # fallback: raw response as-is
+        try:
+            data = json.loads(raw)
+            concept_id = data.get("center", {}).get("id", "")
+            neighborhood_summary = _build_neighborhood_summary(data)
+        except (json.JSONDecodeError, KeyError, TypeError):
+            id_match = re.search(r"ID:\s*`([^`]+)`", raw)
+            if id_match:
+                concept_id = id_match.group(1)
 
         # Enrich with structured concept detail if we have an ID
         detail: ConceptInfo | None = None
@@ -160,7 +258,7 @@ async def _explore_one(
             concept_type=detail.concept_type if detail else "",
             description=detail.description if detail else "",
             relationships=detail.relationships if detail else [],
-            neighborhood_summary=raw,
+            neighborhood_summary=neighborhood_summary,
         )
     except (MCPToolError, RuntimeError) as e:
         logger.warning("Failed to explore concept '%s': %s", name, e)

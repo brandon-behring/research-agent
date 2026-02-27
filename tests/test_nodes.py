@@ -302,6 +302,41 @@ class TestCitationAnalyzer:
 
         assert len(result["citations"]) == 1
 
+    @pytest.mark.asyncio
+    async def test_partial_failure_doesnt_block_other_sources(
+        self, test_config: AgentConfig, mock_mcp: ResearchKBClient
+    ) -> None:
+        """If citation_network fails for one source, other sources still complete."""
+        call_count = 0
+
+        async def _network_side_effect(**kwargs):
+            nonlocal call_count
+            call_count += 1
+            if kwargs.get("source_id") == "src-fail":
+                raise RuntimeError("Network timeout")
+            return mock_mcp.citation_network.return_value
+
+        mock_mcp.citation_network.side_effect = _network_side_effect
+
+        state = ResearchState(
+            query="test",
+            search_results=[
+                SearchResult(title="Fails", content="", source_id="src-fail", score=0.9),
+                SearchResult(title="Works", content="", source_id="src-ok", score=0.8),
+            ],
+        )
+
+        result = await citation_analyzer(state, test_config, mock_mcp)
+
+        # Both sources should be analyzed (parallel, not short-circuit)
+        assert len(result["citations"]) == 2
+        # The failing source has empty citing/cited_by
+        fail_cit = next(c for c in result["citations"] if c.source_id == "src-fail")
+        assert fail_cit.citing == []
+        # The working source has populated citations
+        ok_cit = next(c for c in result["citations"] if c.source_id == "src-ok")
+        assert len(ok_cit.citing) > 0
+
 
 class TestAssumptionAuditor:
     """Tests for the assumption auditor node."""

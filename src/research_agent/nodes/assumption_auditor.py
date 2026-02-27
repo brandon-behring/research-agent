@@ -9,7 +9,9 @@ identification depends on assumptions.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+from typing import Any
 
 from research_agent.config import AgentConfig
 from research_agent.mcp_client import ResearchKBClient
@@ -19,6 +21,40 @@ logger = logging.getLogger(__name__)
 
 # Timeout for all assumption audit calls combined.
 _AUDIT_TIMEOUT_SECONDS = 45
+
+
+def _format_audit_for_synthesis(data: dict[str, Any]) -> str:
+    """Format parsed JSON audit data into readable markdown for synthesis context.
+
+    The ``synthesis.py:143`` feeds ``a.raw_output`` directly to the LLM,
+    so this must produce well-structured, readable text.
+
+    Args:
+        data: Parsed JSON dict from research_kb_audit_assumptions.
+
+    Returns:
+        Formatted markdown string for synthesis consumption.
+    """
+    lines = [f"## Assumptions for: {data.get('method', 'Unknown')}"]
+
+    for a in data.get("assumptions", []):
+        lines.append(f"\n**{a.get('name', '?')}** [{a.get('importance', '')}]")
+        if a.get("formal_statement"):
+            lines.append(f"  - Formal: {a['formal_statement']}")
+        if a.get("plain_english"):
+            lines.append(f"  - Plain English: {a['plain_english']}")
+        if a.get("violation_consequence"):
+            lines.append(f"  - If violated: {a['violation_consequence']}")
+        if a.get("verification_approaches"):
+            approaches = ", ".join(a["verification_approaches"])
+            lines.append(f"  - Verify: {approaches}")
+
+    if data.get("code_docstring_snippet"):
+        lines.append(
+            f"\n### Code Docstring Snippet\n```python\n{data['code_docstring_snippet']}\n```"
+        )
+
+    return "\n".join(lines)
 
 
 async def assumption_auditor(
@@ -72,10 +108,19 @@ async def assumption_auditor(
                         )
                     )
                 else:
+                    assumptions: list[dict[str, Any]] = []
+                    raw_output = raw
+                    try:
+                        parsed = json.loads(raw)
+                        assumptions = parsed.get("assumptions", [])
+                        raw_output = _format_audit_for_synthesis(parsed)
+                    except (json.JSONDecodeError, KeyError, TypeError) as exc:
+                        logger.warning("JSON parse failed for audit '%s': %s", method, exc)
                     audits.append(
                         AssumptionAudit(
                             method_name=method,
-                            raw_output=raw,
+                            assumptions=assumptions,
+                            raw_output=raw_output,
                         )
                     )
                     logger.info("Audited assumptions for: %s", method)

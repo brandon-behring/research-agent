@@ -89,6 +89,9 @@ Seven MCP tools exposed via `ResearchKBClient` (`mcp_client.py:7-14`):
 | `biblio_coupling`  | `research_kb_biblio_coupling`   | Jaccard similarity on shared refs   |
 | `audit_assumptions`| `research_kb_audit_assumptions` | Method assumption documentation     |
 
+Each method requests JSON output (`output_format='json'`) and returns a JSON string.
+Agent nodes parse with `json.loads()` and fall back to markdown parsing on failure.
+
 ## Configuration
 
 Environment variables (see `.env.example`):

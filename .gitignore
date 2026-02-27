@@ -37,3 +37,9 @@ Thumbs.db
 # MCP/Playwright
 .playwright-mcp/
 .mcp.json
+
+# Security - secrets and credentials
+*.key
+*.pem
+*credentials*
+*.secret

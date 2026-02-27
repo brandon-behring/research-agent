@@ -84,7 +84,8 @@ async def query_planner(state: ResearchState, config: AgentConfig) -> NodeUpdate
                     HumanMessage(content=f"Research question: {state.query}"),
                 ]
             )
-            assert isinstance(result, PlannerOutput)
+            if not isinstance(result, PlannerOutput):
+                raise PlannerError(f"Expected PlannerOutput, got {type(result).__name__}")
     except TimeoutError as e:
         raise PlannerError(
             f"Query planning timed out after {_PLANNER_TIMEOUT_SECONDS}s for: {state.query}"
