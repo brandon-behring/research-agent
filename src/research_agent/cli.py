@@ -84,6 +84,7 @@ def _build_json_output(result: dict[str, Any], config: AgentConfig) -> dict[str,
     return {
         "report": result.get("report", ""),
         "metadata": metadata,
+        "evidence_metadata": result.get("evidence_metadata", {}),
         "config": config_summary,
     }
 

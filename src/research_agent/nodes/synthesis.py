@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from typing import Literal
 
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -143,6 +144,306 @@ class SynthesisReport(BaseModel):
         )
 
         return "".join(parts)
+
+
+# Stopwords excluded from term extraction (common English + academic filler).
+_STOPWORDS = frozenset(
+    {
+        "the",
+        "this",
+        "that",
+        "these",
+        "those",
+        "with",
+        "from",
+        "into",
+        "through",
+        "about",
+        "which",
+        "where",
+        "when",
+        "while",
+        "their",
+        "there",
+        "also",
+        "been",
+        "have",
+        "more",
+        "some",
+        "such",
+        "than",
+        "they",
+        "were",
+        "what",
+        "will",
+        "each",
+        "other",
+        "between",
+        "under",
+        "using",
+        "based",
+        "provides",
+        "approach",
+        "however",
+        "both",
+        "does",
+        "well",
+        "show",
+        "used",
+        "many",
+        "most",
+        "over",
+        "only",
+        "very",
+        "after",
+        "before",
+        "should",
+        "could",
+        "would",
+        "being",
+        "given",
+    }
+)
+
+# Minimum term length for meaningful matching.
+_MIN_TERM_LENGTH = 5
+
+# Minimum number of terms from a finding that must match a search result.
+_MIN_TERM_OVERLAP = 2
+
+
+def _extract_terms(text: str) -> list[str]:
+    """Extract significant terms from text for evidence matching.
+
+    Filters out short words and stopwords to focus on domain-specific content.
+
+    Args:
+        text: Source text to extract terms from.
+
+    Returns:
+        List of unique lowercase terms with length >= _MIN_TERM_LENGTH,
+        excluding stopwords.
+    """
+    words = re.findall(r"[a-zA-Z]+", text.lower())
+    seen: set[str] = set()
+    terms: list[str] = []
+    for w in words:
+        if len(w) >= _MIN_TERM_LENGTH and w not in _STOPWORDS and w not in seen:
+            seen.add(w)
+            terms.append(w)
+    return terms
+
+
+def _count_matching_sources(
+    finding_terms: list[str],
+    state: ResearchState,
+) -> tuple[int, float]:
+    """Count search results that mention enough terms from a finding.
+
+    Args:
+        finding_terms: Significant terms extracted from finding text.
+        state: ResearchState with search_results.
+
+    Returns:
+        Tuple of (matching_count, avg_score_of_matches).
+        avg_score is 0.0 if matching_count is 0.
+    """
+    if not finding_terms or not state.search_results:
+        return 0, 0.0
+
+    matching_scores: list[float] = []
+    for r in state.search_results:
+        haystack = f"{r.title} {r.content}".lower()
+        overlap = sum(1 for t in finding_terms if t in haystack)
+        if overlap >= min(_MIN_TERM_OVERLAP, len(finding_terms)):
+            matching_scores.append(r.score)
+
+    if not matching_scores:
+        return 0, 0.0
+    return len(matching_scores), sum(matching_scores) / len(matching_scores)
+
+
+def _validate_findings(
+    findings: list[Finding],
+    state: ResearchState,
+) -> list[Finding]:
+    """Re-score findings against actual evidence in ResearchState.
+
+    For each finding:
+    1. Count how many search results mention key terms from the finding text
+    2. Cap source_count to actual matching sources (LLM can't claim more than exist)
+    3. Downgrade confidence if evidence is thin:
+       - 0 matching sources → force LOW
+       - 1-2 matching sources → cap at MEDIUM
+       - 3+ matching sources with avg score >= 0.7 → allow HIGH
+
+    Args:
+        findings: LLM-generated findings with self-assessed confidence.
+        state: Complete research state with search_results.
+
+    Returns:
+        New list of Finding objects with validated source_count and confidence.
+    """
+    validated: list[Finding] = []
+    for finding in findings:
+        terms = _extract_terms(finding.text)
+        matching_count, avg_score = _count_matching_sources(terms, state)
+
+        # Cap source_count to reality
+        validated_source_count = min(finding.source_count, matching_count)
+
+        # Determine maximum allowed confidence
+        if matching_count == 0:
+            max_confidence: Literal["high", "medium", "low"] = "low"
+        elif matching_count <= 2:
+            max_confidence = "medium"
+        elif avg_score >= 0.7:
+            max_confidence = "high"
+        else:
+            max_confidence = "medium"
+
+        # Apply ceiling: can only downgrade, never upgrade
+        confidence_order: dict[str, int] = {"low": 0, "medium": 1, "high": 2}
+        if confidence_order.get(finding.confidence, 0) > confidence_order[max_confidence]:
+            validated_confidence = max_confidence
+        else:
+            validated_confidence = finding.confidence
+
+        validated.append(
+            Finding(
+                text=finding.text,
+                confidence=validated_confidence,
+                source_count=validated_source_count,
+            )
+        )
+
+    return validated
+
+
+# Citation patterns: [Author (Year)] or (Author, Year) or (Author Year)
+_CITATION_PATTERNS = [
+    re.compile(r"\[([^\]]+?)\s*\((\d{4})\)\]"),  # [Author (2018)]
+    re.compile(r"\(([^)]+?),\s*(\d{4})\)"),  # (Author, 2018)
+    re.compile(r"\(([^)]+?)\s+(\d{4})\)"),  # (Author 2018)
+]
+
+
+def _check_citation_grounding(
+    report: SynthesisReport,
+    state: ResearchState,
+) -> list[str]:
+    """Find citation-like patterns in the report not backed by evidence.
+
+    Scans for patterns like [Author (Year)] or (Author, Year) and checks
+    each against known authors/years from search_results and source_details.
+
+    Args:
+        report: The synthesis report to check.
+        state: ResearchState with search_results and source_details.
+
+    Returns:
+        List of warning strings for ungrounded citations (may be empty).
+    """
+    # Build known (author_fragment, year) pairs from evidence
+    known_authors: list[tuple[str, str]] = []
+    for r in state.search_results:
+        if r.authors and r.year:
+            known_authors.append((r.authors.lower(), r.year))
+    for s in state.source_details:
+        authors = s.get("authors", "")
+        year = str(s.get("year", ""))
+        if authors and year:
+            known_authors.append((authors.lower(), year))
+
+    # Extract all text from report for scanning
+    report_text = report.to_markdown()
+
+    # Find all citation-like patterns
+    found_citations: list[tuple[str, str]] = []
+    for pattern in _CITATION_PATTERNS:
+        for match in pattern.finditer(report_text):
+            author_part = match.group(1).strip()
+            year_part = match.group(2).strip()
+            found_citations.append((author_part, year_part))
+
+    # Deduplicate
+    seen: set[tuple[str, str]] = set()
+    unique_citations: list[tuple[str, str]] = []
+    for cite in found_citations:
+        key = (cite[0].lower(), cite[1])
+        if key not in seen:
+            seen.add(key)
+            unique_citations.append(cite)
+
+    # Check each citation against known evidence
+    warnings: list[str] = []
+    for author_part, year in unique_citations:
+        author_lower = author_part.lower()
+        grounded = False
+        for known_author, known_year in known_authors:
+            if known_year == year:
+                # Check if any fragment of the cited author appears in known authors
+                # Split on common separators to handle "Chernozhukov et al."
+                fragments = re.split(r"[\s,]+", author_lower)
+                significant = [f for f in fragments if len(f) >= 3 and f not in ("et", "al", "al.")]
+                if any(frag in known_author for frag in significant):
+                    grounded = True
+                    break
+        if not grounded:
+            warnings.append(f"'{author_part} ({year})' not found in evidence")
+
+    return warnings
+
+
+class EvidenceMetadata(BaseModel):
+    """Structured evidence quality summary attached to the report.
+
+    Provides machine-readable quality signals so consumers can assess
+    report reliability programmatically, not just via prose.
+    """
+
+    total_sources: int = Field(default=0, description="Total search results found")
+    high_score_sources: int = Field(default=0, description="Sources with score >= 0.8")
+    avg_score: float = Field(default=0.0, description="Mean relevance score across all sources")
+    year_range: str = Field(default="", description="e.g., '2018-2023'")
+    concepts_explored: int = Field(default=0)
+    methods_audited: int = Field(default=0)
+    grounding_warnings: list[str] = Field(default_factory=list)
+    validation_applied: bool = Field(default=True)
+
+
+def _build_evidence_metadata(
+    state: ResearchState,
+    grounding_warnings: list[str],
+) -> EvidenceMetadata:
+    """Build structured evidence metadata from pipeline state.
+
+    Args:
+        state: Complete research state.
+        grounding_warnings: Warnings from citation grounding check.
+
+    Returns:
+        EvidenceMetadata with computed quality signals.
+    """
+    total = len(state.search_results)
+    high = sum(1 for r in state.search_results if r.score >= 0.8)
+    avg = sum(r.score for r in state.search_results) / total if total else 0.0
+
+    year_range = ""
+    years = [int(r.year) for r in state.search_results if r.year.isdigit()]
+    if years:
+        year_range = f"{min(years)}-{max(years)}" if len(years) > 1 else str(years[0])
+
+    return EvidenceMetadata(
+        total_sources=total,
+        high_score_sources=high,
+        avg_score=round(avg, 3),
+        year_range=year_range,
+        concepts_explored=len(state.concepts),
+        methods_audited=len(state.assumption_audits),
+        grounding_warnings=grounding_warnings,
+        validation_applied=True,
+    )
 
 
 def _build_evidence_context(state: ResearchState) -> str:
@@ -381,13 +682,42 @@ async def synthesis_writer(state: ResearchState, config: AgentConfig) -> NodeUpd
     except Exception as e:
         raise SynthesisError(f"Synthesis failed: {e}") from e
 
+    # Post-LLM validation: enforce evidence constraints
+    result.key_findings = _validate_findings(result.key_findings, state)
+
+    grounding_warnings = _check_citation_grounding(result, state)
+    if grounding_warnings:
+        result.confidence_reasoning += "\n\n**Grounding warnings**: " + "; ".join(
+            grounding_warnings
+        )
+
+    evidence_metadata = _build_evidence_metadata(state, grounding_warnings)
+
     report_md = result.to_markdown()
+
+    # Append evidence metadata to the report markdown
+    meta_lines = [
+        "\n\n## Evidence Metadata\n",
+        f"- **Total sources**: {evidence_metadata.total_sources}",
+        f"- **High-score sources** (>=0.8): {evidence_metadata.high_score_sources}",
+        f"- **Average score**: {evidence_metadata.avg_score:.3f}",
+    ]
+    if evidence_metadata.year_range:
+        meta_lines.append(f"- **Year range**: {evidence_metadata.year_range}")
+    meta_lines.append(f"- **Concepts explored**: {evidence_metadata.concepts_explored}")
+    meta_lines.append(f"- **Methods audited**: {evidence_metadata.methods_audited}")
+    if evidence_metadata.grounding_warnings:
+        meta_lines.append(f"- **Grounding warnings**: {len(evidence_metadata.grounding_warnings)}")
+    meta_lines.append(f"- **Validation applied**: {evidence_metadata.validation_applied}")
+    report_md += "\n".join(meta_lines) + "\n"
+
     confidence = f"**{result.confidence_level}**: {result.confidence_reasoning}"
 
-    logger.info("Report generated: %d chars", len(report_md))
+    logger.info("Report generated: %d chars (validated)", len(report_md))
 
     return NodeUpdate(
         report=report_md,
         confidence_assessment=confidence,
+        evidence_metadata=evidence_metadata.model_dump(),
         current_node="synthesis_writer",
     )

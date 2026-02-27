@@ -7,7 +7,17 @@ Validates that _build_evidence_context() includes:
 
 from __future__ import annotations
 
-from research_agent.nodes.synthesis import Finding, SynthesisReport, _build_evidence_context
+from research_agent.nodes.synthesis import (
+    EvidenceMetadata,
+    Finding,
+    SynthesisReport,
+    _build_evidence_context,
+    _build_evidence_metadata,
+    _check_citation_grounding,
+    _count_matching_sources,
+    _extract_terms,
+    _validate_findings,
+)
 from research_agent.state import (
     AssumptionAudit,
     ConceptInfo,
@@ -490,3 +500,498 @@ class TestSynthesisReportMarkdown:
         )
         md = report.to_markdown()
         assert "Next Research Questions" not in md
+
+
+# ── Validation tests (Phase 8) ───────────────────────────────────────
+
+
+def _make_search_results(
+    n: int = 3, base_score: float = 0.8, content: str = "double machine learning cross-fitting"
+) -> list[SearchResult]:
+    """Helper to create search results for validation tests."""
+    return [
+        SearchResult(
+            title=f"Paper {i}",
+            content=content,
+            source_id=f"s{i}",
+            score=base_score + (i * 0.01),
+            authors=f"Author{i} et al.",
+            year=str(2018 + i),
+        )
+        for i in range(n)
+    ]
+
+
+class TestExtractTerms:
+    """Tests for _extract_terms."""
+
+    def test_extracts_long_words(self) -> None:
+        """Words >= 5 chars are extracted."""
+        terms = _extract_terms("The double machine learning method")
+        assert "double" in terms
+        assert "machine" in terms
+        assert "learning" in terms
+        assert "method" in terms
+
+    def test_filters_short_words(self) -> None:
+        """Words < 5 chars excluded."""
+        terms = _extract_terms("DML is a good method for this task")
+        assert "good" not in terms
+        assert "this" not in terms
+
+    def test_filters_stopwords(self) -> None:
+        """Stopwords excluded even if long enough."""
+        terms = _extract_terms("using these other approaches between models")
+        assert "using" not in terms
+        assert "these" not in terms
+        assert "other" not in terms
+        assert "between" not in terms
+        assert "approaches" in terms
+        assert "models" in terms
+
+    def test_deduplicates(self) -> None:
+        """Duplicate terms appear only once."""
+        terms = _extract_terms("learning and learning again learning")
+        assert terms.count("learning") == 1
+
+    def test_empty_text(self) -> None:
+        """Empty text returns empty list."""
+        assert _extract_terms("") == []
+
+
+class TestCountMatchingSources:
+    """Tests for _count_matching_sources."""
+
+    def test_matches_sources_with_overlapping_terms(self) -> None:
+        """Sources with >= 2 matching terms count as matches."""
+        results = _make_search_results(3, content="double machine learning cross-fitting")
+        state = ResearchState(query="test", search_results=results)
+        terms = ["double", "machine", "learning"]
+        count, avg = _count_matching_sources(terms, state)
+        assert count == 3
+        assert avg > 0.0
+
+    def test_no_matches_returns_zero(self) -> None:
+        """Sources with no overlapping terms return 0."""
+        results = _make_search_results(3, content="completely unrelated content here")
+        state = ResearchState(query="test", search_results=results)
+        terms = ["quantum", "physics", "entanglement"]
+        count, avg = _count_matching_sources(terms, state)
+        assert count == 0
+        assert avg == 0.0
+
+    def test_empty_search_results(self) -> None:
+        """Empty search_results returns 0."""
+        state = ResearchState(query="test")
+        count, avg = _count_matching_sources(["term1", "term2"], state)
+        assert count == 0
+
+    def test_empty_terms(self) -> None:
+        """Empty terms returns 0."""
+        results = _make_search_results(3)
+        state = ResearchState(query="test", search_results=results)
+        count, avg = _count_matching_sources([], state)
+        assert count == 0
+
+    def test_single_term_finding_matches_with_one_overlap(self) -> None:
+        """A finding with only 1 significant term matches on 1 overlap."""
+        results = _make_search_results(1, content="estimation using propensity")
+        state = ResearchState(query="test", search_results=results)
+        # Only one term — min overlap is min(2, 1) = 1
+        count, _ = _count_matching_sources(["estimation"], state)
+        assert count == 1
+
+
+class TestValidateFindings:
+    """Tests for _validate_findings."""
+
+    def test_inflated_source_count_gets_capped(self) -> None:
+        """LLM-claimed source_count is capped to actual matching sources."""
+        results = _make_search_results(2, content="double machine learning estimation")
+        state = ResearchState(query="test", search_results=results)
+        findings = [
+            Finding(
+                text="Double machine learning provides robust estimation",
+                confidence="high",
+                source_count=10,
+            )
+        ]
+        validated = _validate_findings(findings, state)
+        assert validated[0].source_count <= 2
+
+    def test_zero_matches_forces_low(self) -> None:
+        """Finding with 0 matching sources → forced LOW."""
+        results = _make_search_results(3, content="completely unrelated topic here")
+        state = ResearchState(query="test", search_results=results)
+        findings = [
+            Finding(
+                text="Quantum entanglement drives decoherence",
+                confidence="high",
+                source_count=5,
+            )
+        ]
+        validated = _validate_findings(findings, state)
+        assert validated[0].confidence == "low"
+        assert validated[0].source_count == 0
+
+    def test_one_to_two_matches_caps_medium(self) -> None:
+        """Finding with 1-2 matching sources → capped MEDIUM."""
+        results = _make_search_results(2, content="double machine learning estimation")
+        state = ResearchState(query="test", search_results=results)
+        findings = [
+            Finding(
+                text="Double machine learning provides estimation",
+                confidence="high",
+                source_count=5,
+            )
+        ]
+        validated = _validate_findings(findings, state)
+        assert validated[0].confidence == "medium"
+
+    def test_three_plus_high_score_allows_high(self) -> None:
+        """Finding with 3+ high-score matches → HIGH allowed."""
+        results = _make_search_results(4, base_score=0.85, content="double machine learning")
+        state = ResearchState(query="test", search_results=results)
+        findings = [
+            Finding(
+                text="Double machine learning is well-supported",
+                confidence="high",
+                source_count=4,
+            )
+        ]
+        validated = _validate_findings(findings, state)
+        assert validated[0].confidence == "high"
+
+    def test_three_plus_low_score_caps_medium(self) -> None:
+        """Finding with 3+ matches but low avg score → capped MEDIUM."""
+        results = _make_search_results(4, base_score=0.3, content="double machine learning")
+        state = ResearchState(query="test", search_results=results)
+        findings = [
+            Finding(
+                text="Double machine learning is well-supported",
+                confidence="high",
+                source_count=4,
+            )
+        ]
+        validated = _validate_findings(findings, state)
+        assert validated[0].confidence == "medium"
+
+    def test_empty_search_results_all_low(self) -> None:
+        """Empty search_results → all findings forced LOW."""
+        state = ResearchState(query="test")
+        findings = [
+            Finding(text="Some finding about methods", confidence="high", source_count=3),
+            Finding(text="Another finding here today", confidence="medium", source_count=1),
+        ]
+        validated = _validate_findings(findings, state)
+        assert all(f.confidence == "low" for f in validated)
+        assert all(f.source_count == 0 for f in validated)
+
+    def test_short_finding_text_handled_gracefully(self) -> None:
+        """Very short finding text with few terms still works."""
+        results = _make_search_results(1, content="short text match")
+        state = ResearchState(query="test", search_results=results)
+        findings = [Finding(text="short", confidence="medium", source_count=1)]
+        validated = _validate_findings(findings, state)
+        # Should not crash, graceful handling
+        assert len(validated) == 1
+
+    def test_low_confidence_not_upgraded(self) -> None:
+        """Validation never upgrades confidence, only downgrades."""
+        results = _make_search_results(5, base_score=0.9, content="double machine learning")
+        state = ResearchState(query="test", search_results=results)
+        findings = [
+            Finding(
+                text="Double machine learning provides estimation",
+                confidence="low",
+                source_count=1,
+            )
+        ]
+        validated = _validate_findings(findings, state)
+        assert validated[0].confidence == "low"
+
+    def test_multiple_findings_validated_independently(self) -> None:
+        """Each finding validated against evidence independently."""
+        results = _make_search_results(
+            3, base_score=0.85, content="double machine learning cross-fitting"
+        )
+        state = ResearchState(query="test", search_results=results)
+        findings = [
+            Finding(
+                text="Double machine learning uses cross-fitting",
+                confidence="high",
+                source_count=3,
+            ),
+            Finding(
+                text="Quantum physics drives entanglement",
+                confidence="high",
+                source_count=5,
+            ),
+        ]
+        validated = _validate_findings(findings, state)
+        assert validated[0].confidence == "high"
+        assert validated[1].confidence == "low"
+
+
+class TestCheckCitationGrounding:
+    """Tests for _check_citation_grounding."""
+
+    def test_grounded_citation_no_warnings(self) -> None:
+        """Citation matching search_results author+year → no warning."""
+        state = ResearchState(
+            query="test",
+            search_results=[
+                SearchResult(
+                    title="DML Paper",
+                    content="Content",
+                    source_id="s1",
+                    score=0.9,
+                    authors="Chernozhukov et al.",
+                    year="2018",
+                ),
+            ],
+        )
+        report = SynthesisReport(
+            executive_summary="Chernozhukov et al. [Chernozhukov (2018)] showed DML works.",
+            key_findings=[Finding(text="F", confidence="low")],
+            concept_map="C",
+            citation_landscape="Cite",
+            methodological_considerations="M",
+            gaps_limitations="G",
+            confidence_level="medium",
+            confidence_reasoning="R",
+        )
+        warnings = _check_citation_grounding(report, state)
+        assert len(warnings) == 0
+
+    def test_fabricated_author_generates_warning(self) -> None:
+        """Citation with unknown author+year → warning."""
+        state = ResearchState(
+            query="test",
+            search_results=[
+                SearchResult(
+                    title="Paper",
+                    content="C",
+                    source_id="s1",
+                    score=0.9,
+                    authors="Smith et al.",
+                    year="2020",
+                ),
+            ],
+        )
+        report = SynthesisReport(
+            executive_summary="As shown by [Fabricated (2025)] in their work.",
+            key_findings=[Finding(text="F", confidence="low")],
+            concept_map="C",
+            citation_landscape="Cite",
+            methodological_considerations="M",
+            gaps_limitations="G",
+            confidence_level="medium",
+            confidence_reasoning="R",
+        )
+        warnings = _check_citation_grounding(report, state)
+        assert len(warnings) == 1
+        assert "Fabricated" in warnings[0]
+
+    def test_wrong_year_generates_warning(self) -> None:
+        """Author from evidence but wrong year → warning."""
+        state = ResearchState(
+            query="test",
+            search_results=[
+                SearchResult(
+                    title="Paper",
+                    content="C",
+                    source_id="s1",
+                    score=0.9,
+                    authors="Smith et al.",
+                    year="2020",
+                ),
+            ],
+        )
+        report = SynthesisReport(
+            executive_summary="As shown by [Smith (2025)] in their work.",
+            key_findings=[Finding(text="F", confidence="low")],
+            concept_map="C",
+            citation_landscape="Cite",
+            methodological_considerations="M",
+            gaps_limitations="G",
+            confidence_level="medium",
+            confidence_reasoning="R",
+        )
+        warnings = _check_citation_grounding(report, state)
+        assert len(warnings) >= 1
+
+    def test_mixed_grounded_and_ungrounded(self) -> None:
+        """Mix of grounded and ungrounded → only ungrounded warned."""
+        state = ResearchState(
+            query="test",
+            search_results=[
+                SearchResult(
+                    title="Paper",
+                    content="C",
+                    source_id="s1",
+                    score=0.9,
+                    authors="Smith et al.",
+                    year="2020",
+                ),
+            ],
+        )
+        report = SynthesisReport(
+            executive_summary="[Smith (2020)] showed X. [Jones (2019)] showed Y.",
+            key_findings=[Finding(text="F", confidence="low")],
+            concept_map="C",
+            citation_landscape="Cite",
+            methodological_considerations="M",
+            gaps_limitations="G",
+            confidence_level="medium",
+            confidence_reasoning="R",
+        )
+        warnings = _check_citation_grounding(report, state)
+        assert len(warnings) == 1
+        assert "Jones" in warnings[0]
+
+    def test_no_citations_in_report_no_warnings(self) -> None:
+        """Report without citation patterns → empty warnings."""
+        state = ResearchState(
+            query="test",
+            search_results=_make_search_results(2),
+        )
+        report = SynthesisReport(
+            executive_summary="This is a plain summary without citations.",
+            key_findings=[Finding(text="F", confidence="low")],
+            concept_map="C",
+            citation_landscape="Cite",
+            methodological_considerations="M",
+            gaps_limitations="G",
+            confidence_level="medium",
+            confidence_reasoning="R",
+        )
+        warnings = _check_citation_grounding(report, state)
+        assert len(warnings) == 0
+
+    def test_source_details_provide_author_coverage(self) -> None:
+        """Authors from source_details also ground citations."""
+        state = ResearchState(
+            query="test",
+            search_results=[],
+            source_details=[
+                {"authors": "DetailAuthor et al.", "year": "2021"},
+            ],
+        )
+        report = SynthesisReport(
+            executive_summary="[DetailAuthor (2021)] showed interesting results.",
+            key_findings=[Finding(text="F", confidence="low")],
+            concept_map="C",
+            citation_landscape="Cite",
+            methodological_considerations="M",
+            gaps_limitations="G",
+            confidence_level="medium",
+            confidence_reasoning="R",
+        )
+        warnings = _check_citation_grounding(report, state)
+        assert len(warnings) == 0
+
+    def test_parenthetical_citation_format(self) -> None:
+        """(Author, Year) format is also detected."""
+        state = ResearchState(
+            query="test",
+            search_results=[],
+        )
+        report = SynthesisReport(
+            executive_summary="This was shown (FakeAuthor, 2023) in their study.",
+            key_findings=[Finding(text="F", confidence="low")],
+            concept_map="C",
+            citation_landscape="Cite",
+            methodological_considerations="M",
+            gaps_limitations="G",
+            confidence_level="medium",
+            confidence_reasoning="R",
+        )
+        warnings = _check_citation_grounding(report, state)
+        assert len(warnings) >= 1
+        assert "FakeAuthor" in warnings[0]
+
+
+class TestEvidenceMetadata:
+    """Tests for EvidenceMetadata and _build_evidence_metadata."""
+
+    def test_metadata_from_populated_state(self) -> None:
+        """Metadata correctly computed from state with results."""
+        results = _make_search_results(5, base_score=0.7)
+        state = ResearchState(
+            query="test",
+            search_results=results,
+            concepts=[
+                ConceptInfo(concept_id="c1", name="DML"),
+                ConceptInfo(concept_id="c2", name="IV"),
+            ],
+            assumption_audits=[
+                AssumptionAudit(method_name="DML", raw_output="..."),
+            ],
+        )
+        meta = _build_evidence_metadata(state, ["warning 1"])
+        assert meta.total_sources == 5
+        assert meta.high_score_sources >= 0
+        assert meta.avg_score > 0.0
+        assert meta.concepts_explored == 2
+        assert meta.methods_audited == 1
+        assert meta.grounding_warnings == ["warning 1"]
+        assert meta.validation_applied is True
+
+    def test_metadata_from_empty_state(self) -> None:
+        """Empty state → sensible defaults."""
+        state = ResearchState(query="test")
+        meta = _build_evidence_metadata(state, [])
+        assert meta.total_sources == 0
+        assert meta.high_score_sources == 0
+        assert meta.avg_score == 0.0
+        assert meta.year_range == ""
+        assert meta.concepts_explored == 0
+        assert meta.methods_audited == 0
+        assert meta.grounding_warnings == []
+
+    def test_year_range_computed(self) -> None:
+        """Year range extracted from search results."""
+        results = [
+            SearchResult(title="A", content="C", source_id="s1", score=0.8, year="2018"),
+            SearchResult(title="B", content="C", source_id="s2", score=0.7, year="2023"),
+        ]
+        state = ResearchState(query="test", search_results=results)
+        meta = _build_evidence_metadata(state, [])
+        assert meta.year_range == "2018-2023"
+
+    def test_single_year(self) -> None:
+        """Single year result → just that year."""
+        results = [
+            SearchResult(title="A", content="C", source_id="s1", score=0.8, year="2020"),
+        ]
+        state = ResearchState(query="test", search_results=results)
+        meta = _build_evidence_metadata(state, [])
+        assert meta.year_range == "2020"
+
+    def test_high_score_sources_counted(self) -> None:
+        """Sources with score >= 0.8 counted correctly."""
+        results = [
+            SearchResult(title="A", content="C", source_id="s1", score=0.9),
+            SearchResult(title="B", content="C", source_id="s2", score=0.85),
+            SearchResult(title="C", content="C", source_id="s3", score=0.5),
+        ]
+        state = ResearchState(query="test", search_results=results)
+        meta = _build_evidence_metadata(state, [])
+        assert meta.high_score_sources == 2
+
+    def test_metadata_model_dump(self) -> None:
+        """EvidenceMetadata serializes to dict correctly."""
+        meta = EvidenceMetadata(
+            total_sources=3,
+            high_score_sources=2,
+            avg_score=0.85,
+            year_range="2018-2023",
+            concepts_explored=5,
+            methods_audited=2,
+            grounding_warnings=["w1"],
+            validation_applied=True,
+        )
+        d = meta.model_dump()
+        assert d["total_sources"] == 3
+        assert d["grounding_warnings"] == ["w1"]

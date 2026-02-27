@@ -212,6 +212,10 @@ class ResearchState(BaseModel):
     # --- Synthesis output ---
     report: str = ""
     confidence_assessment: str = ""
+    evidence_metadata: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Structured evidence quality metadata from post-synthesis validation",
+    )
 
     # --- Metadata ---
     current_node: Annotated[str, _last_value] = ""
@@ -242,5 +246,6 @@ class NodeUpdate(TypedDict, total=False):
     source_details: list[dict[str, Any]]
     report: str
     confidence_assessment: str
+    evidence_metadata: dict[str, Any]
     current_node: str
     node_duration_ms: int  # Injected by _make_resilient_node for timing

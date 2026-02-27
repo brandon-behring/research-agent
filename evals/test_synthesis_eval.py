@@ -15,6 +15,7 @@ from evals.judges import grade_synthesis
 from evals.metrics import EvalResult, grounding_score
 from research_agent.config import AgentConfig, ModelConfig
 from research_agent.nodes.synthesis import (
+    Finding,
     SynthesisReport,
     _build_evidence_context,
     synthesis_writer,
@@ -304,7 +305,10 @@ def test_synthesis_report_structure() -> None:
     """SynthesisReport.to_markdown() produces expected sections."""
     report = SynthesisReport(
         executive_summary="DML is a causal inference framework.",
-        key_findings=["Finding 1", "Finding 2"],
+        key_findings=[
+            Finding(text="Finding 1", confidence="high", source_count=2),
+            Finding(text="Finding 2", confidence="medium"),
+        ],
         concept_map="DML -> cross-fitting",
         citation_landscape="Chernozhukov (2018) is foundational.",
         methodological_considerations="Requires unconfoundedness.",

@@ -482,6 +482,52 @@ class TestJSONOutput:
         assert "max_search_results" in output["config"]
         assert "planning_model" in output["config"]
 
+    def test_build_json_output_includes_evidence_metadata(self) -> None:
+        """_build_json_output includes evidence_metadata when present."""
+        from research_agent.cli import _build_json_output
+        from research_agent.config import AgentConfig
+
+        evidence_meta = {
+            "total_sources": 5,
+            "high_score_sources": 3,
+            "avg_score": 0.82,
+            "year_range": "2018-2023",
+            "concepts_explored": 4,
+            "methods_audited": 2,
+            "grounding_warnings": [],
+            "validation_applied": True,
+        }
+        result = {
+            "report": "# Report",
+            "search_results": [],
+            "concepts": [],
+            "citations": [],
+            "assumption_audits": [],
+            "evidence_metadata": evidence_meta,
+        }
+        config = AgentConfig()
+        output = _build_json_output(result, config)
+
+        assert output["evidence_metadata"] == evidence_meta
+        assert output["evidence_metadata"]["total_sources"] == 5
+
+    def test_build_json_output_evidence_metadata_default_empty(self) -> None:
+        """_build_json_output returns empty dict when evidence_metadata absent."""
+        from research_agent.cli import _build_json_output
+        from research_agent.config import AgentConfig
+
+        result = {
+            "report": "# Report",
+            "search_results": [],
+            "concepts": [],
+            "citations": [],
+            "assumption_audits": [],
+        }
+        config = AgentConfig()
+        output = _build_json_output(result, config)
+
+        assert output["evidence_metadata"] == {}
+
 
 class TestErrorFormatting:
     """Tests for _format_error actionable hints."""
