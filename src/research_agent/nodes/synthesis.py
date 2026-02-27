@@ -124,9 +124,7 @@ class SynthesisReport(BaseModel):
         ]
 
         if self.concept_map_mermaid:
-            parts.append(
-                f"\n\n```mermaid\n{self.concept_map_mermaid}\n```"
-            )
+            parts.append(f"\n\n```mermaid\n{self.concept_map_mermaid}\n```")
 
         parts.append(
             f"\n\n## Citation Landscape\n\n{self.citation_landscape}\n\n"

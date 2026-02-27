@@ -25,6 +25,7 @@ research-agent --stream "What is DML?"    # Stream progress to stderr
 research-agent --no-cache "Query"         # Bypass cache for this query
 research-agent --clear-cache              # Clear all cached reports and exit
 research-agent --health-check             # Check MCP connection health and exit
+research-agent --json "Query"             # Structured JSON output (report + metadata)
 
 # Docker (multi-service with research-kb)
 docker-compose up                         # Start agent + research-kb
