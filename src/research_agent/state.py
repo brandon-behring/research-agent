@@ -185,6 +185,30 @@ class ResearchState(BaseModel):
         description="Concept path explanations from explain_connection",
     )
 
+    # --- KB Context (pre-pipeline) ---
+    kb_domains: list[str] = Field(
+        default_factory=list,
+        description="Available KB domains from list_domains",
+    )
+    kb_stats_summary: str = Field(
+        default="",
+        description="Corpus size summary for planner/synthesis (e.g., '495 sources, 226K chunks')",
+    )
+
+    # --- Enrichment (Phase 5) ---
+    similar_concepts: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description="Embedding-similar concepts from find_similar_concepts",
+    )
+    cross_domain_matches: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description="Cross-domain concept mappings from cross_domain_concepts",
+    )
+    source_details: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description="Full source metadata from get_source",
+    )
+
     # --- Synthesis output ---
     report: str = ""
     confidence_assessment: str = ""
@@ -211,6 +235,11 @@ class NodeUpdate(TypedDict, total=False):
     assumption_summary: str
     discovered_methods: list[str]
     connection_explanations: list[dict[str, Any]]
+    kb_domains: list[str]
+    kb_stats_summary: str
+    similar_concepts: list[dict[str, Any]]
+    cross_domain_matches: list[dict[str, Any]]
+    source_details: list[dict[str, Any]]
     report: str
     confidence_assessment: str
     current_node: str

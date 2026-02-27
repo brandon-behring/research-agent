@@ -4,7 +4,9 @@ Architecture:
     This module abstracts the MCP transport (stdio or HTTP) so agent nodes
     call clean Python methods without knowing how research-kb is connected.
 
-    Eight tools exposed (of research-kb's 20+):
+    Thirteen tools exposed (of research-kb's 21):
+
+    JSON tools (output_format='json'):
         1. search           -- 4-signal hybrid search (BM25 + vector + graph + PageRank)
         2. fast_search      -- lightweight vector-only fallback
         3. get_concept      -- retrieve concept details from knowledge graph
@@ -14,9 +16,12 @@ Architecture:
         7. audit_assumptions -- method assumption documentation
         8. explain_connection -- trace path between concepts with evidence
 
-    Each method requests JSON output (``output_format='json'``) and returns
-    the raw JSON string. Agent nodes parse with ``json.loads()`` and fall
-    back to markdown parsing on failure.
+    Markdown tools (no output_format parameter):
+        9.  get_source            -- full source metadata (title, authors, year, type)
+        10. find_similar_concepts -- embedding-based concept similarity
+        11. cross_domain_concepts -- cross-domain concept bridging
+        12. list_domains          -- available KB domains
+        13. stats                 -- corpus size and composition
 
 Resilience:
     - Retries with exponential backoff on MCPToolError (3 attempts)
@@ -430,3 +435,98 @@ class ResearchKBClient:
                 "output_format": "json",
             },
         )
+
+    # -- Markdown tools (no output_format parameter) ---------------------------
+
+    async def get_source(
+        self,
+        source_id: str,
+        include_chunks: bool = False,
+        chunk_limit: int = 10,
+    ) -> str:
+        """Retrieve full source metadata (title, authors, year, type, DOI).
+
+        Args:
+            source_id: UUID of the source document.
+            include_chunks: Whether to include content chunks.
+            chunk_limit: Maximum chunks if include_chunks is True.
+
+        Returns:
+            Markdown string with source metadata.
+        """
+        args: dict[str, Any] = {"source_id": source_id}
+        if include_chunks:
+            args["include_chunks"] = True
+            args["chunk_limit"] = chunk_limit
+        return await self._call_tool("research_kb_get_source", args)
+
+    async def find_similar_concepts(
+        self,
+        concept_id: str,
+        limit: int = 10,
+        threshold: float = 0.8,
+    ) -> str:
+        """Find embedding-similar concepts in the knowledge graph.
+
+        Args:
+            concept_id: UUID of the source concept.
+            limit: Maximum similar concepts to return.
+            threshold: Minimum cosine similarity threshold (0.0-1.0).
+
+        Returns:
+            Markdown string with similar concepts and similarity scores.
+        """
+        return await self._call_tool(
+            "research_kb_find_similar_concepts",
+            {"concept_id": concept_id, "limit": limit, "threshold": threshold},
+        )
+
+    async def cross_domain_concepts(
+        self,
+        source_domain: str,
+        target_domain: str,
+        concept_name: str | None = None,
+        concept_id: str | None = None,
+        similarity_threshold: float = 0.85,
+        limit: int = 10,
+    ) -> str:
+        """Find concepts that bridge two knowledge domains.
+
+        Args:
+            source_domain: Source domain name (e.g., 'causal_inference').
+            target_domain: Target domain name (e.g., 'time_series').
+            concept_name: Optional concept name to anchor the search.
+            concept_id: Optional concept ID to anchor the search.
+            similarity_threshold: Minimum similarity for cross-domain matches.
+            limit: Maximum matches to return.
+
+        Returns:
+            Markdown string with cross-domain concept mappings.
+        """
+        args: dict[str, Any] = {
+            "source_domain": source_domain,
+            "target_domain": target_domain,
+            "similarity_threshold": similarity_threshold,
+            "limit": limit,
+        }
+        if concept_id:
+            args["concept_id"] = concept_id
+        elif concept_name:
+            args["concept_name"] = concept_name
+        return await self._call_tool("research_kb_cross_domain_concepts", args)
+
+    async def list_domains(self) -> str:
+        """List all available domains in the knowledge base.
+
+        Returns:
+            Markdown string with domain names and descriptions.
+        """
+        return await self._call_tool("research_kb_list_domains", {})
+
+    async def stats(self) -> str:
+        """Get corpus statistics (source count, chunk count, concept count).
+
+        Returns:
+            Markdown string with corpus composition summary.
+        """
+        return await self._call_tool("research_kb_stats", {})

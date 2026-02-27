@@ -136,5 +136,17 @@ class AgentConfig(BaseSettings):
         alias="TOP_RESULTS_FOR_CITATIONS",
         description="Number of top search results to analyze for citation networks",
     )
+    max_similar_concepts: int = Field(
+        default=5,
+        ge=1,
+        le=20,
+        alias="MAX_SIMILAR_CONCEPTS",
+        description="Maximum embedding-similar concepts to collect across all explored concepts",
+    )
+    enable_cross_domain: bool = Field(
+        default=True,
+        alias="ENABLE_CROSS_DOMAIN",
+        description="Enable cross-domain concept bridging in concept explorer",
+    )
 
     model_config = {"frozen": True, "populate_by_name": True}

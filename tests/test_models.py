@@ -209,6 +209,31 @@ class TestResearchState:
         s = ResearchState()
         assert s.connection_explanations == []
 
+    def test_kb_domains_defaults_empty(self) -> None:
+        """kb_domains defaults to empty list."""
+        s = ResearchState()
+        assert s.kb_domains == []
+
+    def test_kb_stats_summary_defaults_empty(self) -> None:
+        """kb_stats_summary defaults to empty string."""
+        s = ResearchState()
+        assert s.kb_stats_summary == ""
+
+    def test_similar_concepts_defaults_empty(self) -> None:
+        """similar_concepts defaults to empty list."""
+        s = ResearchState()
+        assert s.similar_concepts == []
+
+    def test_cross_domain_matches_defaults_empty(self) -> None:
+        """cross_domain_matches defaults to empty list."""
+        s = ResearchState()
+        assert s.cross_domain_matches == []
+
+    def test_source_details_defaults_empty(self) -> None:
+        """source_details defaults to empty list."""
+        s = ResearchState()
+        assert s.source_details == []
+
     def test_serialization_roundtrip(self) -> None:
         """Full state survives serialization."""
         s = ResearchState(
@@ -217,6 +242,11 @@ class TestResearchState:
             report="# Report",
             discovered_methods=["DML", "IV"],
             connection_explanations=[{"concept_a": "A", "concept_b": "B"}],
+            kb_domains=["causal_inference", "time_series"],
+            kb_stats_summary="495 sources, 226K chunks",
+            similar_concepts=[{"name": "TMLE", "similarity": 0.87}],
+            cross_domain_matches=[{"source": "IV", "target": "Granger"}],
+            source_details=[{"title": "Paper A", "year": "2018"}],
         )
         data = s.model_dump()
         reconstructed = ResearchState(**data)
@@ -224,3 +254,8 @@ class TestResearchState:
         assert len(reconstructed.sub_tasks) == 1
         assert reconstructed.discovered_methods == ["DML", "IV"]
         assert len(reconstructed.connection_explanations) == 1
+        assert reconstructed.kb_domains == ["causal_inference", "time_series"]
+        assert reconstructed.kb_stats_summary == "495 sources, 226K chunks"
+        assert len(reconstructed.similar_concepts) == 1
+        assert len(reconstructed.cross_domain_matches) == 1
+        assert len(reconstructed.source_details) == 1

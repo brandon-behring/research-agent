@@ -66,7 +66,7 @@ class TestCustomPythonPath:
 
 
 class TestMCPClientInterface:
-    """Test that all 7 tool methods have correct signatures."""
+    """Test that all 13 tool methods have correct signatures."""
 
     def test_search_method_exists(self) -> None:
         """search() method exists with expected parameters."""
@@ -118,8 +118,8 @@ class TestMCPClientInterface:
         assert hasattr(client, "explain_connection")
         assert callable(client.explain_connection)
 
-    def test_all_eight_tools_present(self) -> None:
-        """All 8 tool methods exist on the client."""
+    def test_all_thirteen_tools_present(self) -> None:
+        """All 13 tool methods exist on the client."""
         config = MCPConfig(transport="stdio", research_kb_path="/fake")
         client = ResearchKBClient(config)
         expected_tools = [
@@ -131,6 +131,11 @@ class TestMCPClientInterface:
             "biblio_coupling",
             "audit_assumptions",
             "explain_connection",
+            "get_source",
+            "find_similar_concepts",
+            "cross_domain_concepts",
+            "list_domains",
+            "stats",
         ]
         for tool in expected_tools:
             assert hasattr(client, tool), f"Missing tool method: {tool}"
@@ -461,6 +466,114 @@ class TestToolArgumentForwarding:
         assert args["style"] == "research"
         assert args["max_evidence_per_step"] == 2
         assert args["use_llm"] is False
+
+    # -- Markdown tool argument forwarding --
+
+    @pytest.mark.asyncio
+    async def test_get_source_forwards_args(
+        self, connected_client: tuple[ResearchKBClient, AsyncMock]
+    ) -> None:
+        """get_source() forwards source_id and optional chunk params."""
+        client, session = connected_client
+        await client.get_source("src-001", include_chunks=True, chunk_limit=5)
+        session.call_tool.assert_awaited_once_with(
+            "research_kb_get_source",
+            {"source_id": "src-001", "include_chunks": True, "chunk_limit": 5},
+        )
+
+    @pytest.mark.asyncio
+    async def test_get_source_omits_chunks_when_false(
+        self, connected_client: tuple[ResearchKBClient, AsyncMock]
+    ) -> None:
+        """get_source() omits include_chunks/chunk_limit when not requested."""
+        client, session = connected_client
+        await client.get_source("src-001")
+        args = session.call_tool.call_args[0][1]
+        assert args == {"source_id": "src-001"}
+        assert "include_chunks" not in args
+        assert "chunk_limit" not in args
+
+    @pytest.mark.asyncio
+    async def test_find_similar_concepts_forwards_args(
+        self, connected_client: tuple[ResearchKBClient, AsyncMock]
+    ) -> None:
+        """find_similar_concepts() forwards concept_id, limit, threshold."""
+        client, session = connected_client
+        await client.find_similar_concepts("concept-001", limit=5, threshold=0.9)
+        session.call_tool.assert_awaited_once_with(
+            "research_kb_find_similar_concepts",
+            {"concept_id": "concept-001", "limit": 5, "threshold": 0.9},
+        )
+
+    @pytest.mark.asyncio
+    async def test_cross_domain_concepts_forwards_args_with_id(
+        self, connected_client: tuple[ResearchKBClient, AsyncMock]
+    ) -> None:
+        """cross_domain_concepts() forwards with concept_id."""
+        client, session = connected_client
+        await client.cross_domain_concepts(
+            "causal_inference", "time_series", concept_id="concept-001"
+        )
+        args = session.call_tool.call_args[0][1]
+        assert args["source_domain"] == "causal_inference"
+        assert args["target_domain"] == "time_series"
+        assert args["concept_id"] == "concept-001"
+        assert "concept_name" not in args
+
+    @pytest.mark.asyncio
+    async def test_cross_domain_concepts_forwards_args_with_name(
+        self, connected_client: tuple[ResearchKBClient, AsyncMock]
+    ) -> None:
+        """cross_domain_concepts() forwards with concept_name when no concept_id."""
+        client, session = connected_client
+        await client.cross_domain_concepts("causal_inference", "time_series", concept_name="DML")
+        args = session.call_tool.call_args[0][1]
+        assert args["concept_name"] == "DML"
+        assert "concept_id" not in args
+
+    @pytest.mark.asyncio
+    async def test_cross_domain_concepts_id_takes_precedence(
+        self, connected_client: tuple[ResearchKBClient, AsyncMock]
+    ) -> None:
+        """cross_domain_concepts() prefers concept_id over concept_name."""
+        client, session = connected_client
+        await client.cross_domain_concepts(
+            "causal_inference",
+            "time_series",
+            concept_id="concept-001",
+            concept_name="DML",
+        )
+        args = session.call_tool.call_args[0][1]
+        assert args["concept_id"] == "concept-001"
+        assert "concept_name" not in args
+
+    @pytest.mark.asyncio
+    async def test_list_domains_forwards_empty_args(
+        self, connected_client: tuple[ResearchKBClient, AsyncMock]
+    ) -> None:
+        """list_domains() sends empty args dict."""
+        client, session = connected_client
+        await client.list_domains()
+        session.call_tool.assert_awaited_once_with("research_kb_list_domains", {})
+
+    @pytest.mark.asyncio
+    async def test_stats_forwards_empty_args(
+        self, connected_client: tuple[ResearchKBClient, AsyncMock]
+    ) -> None:
+        """stats() sends empty args dict."""
+        client, session = connected_client
+        await client.stats()
+        session.call_tool.assert_awaited_once_with("research_kb_stats", {})
+
+    @pytest.mark.asyncio
+    async def test_markdown_tools_have_no_output_format(
+        self, connected_client: tuple[ResearchKBClient, AsyncMock]
+    ) -> None:
+        """Markdown tools (get_source, find_similar_concepts, etc.) don't send output_format."""
+        client, session = connected_client
+        await client.get_source("src-001")
+        args = session.call_tool.call_args[0][1]
+        assert "output_format" not in args
 
 
 class TestCallTool:

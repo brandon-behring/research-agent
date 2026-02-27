@@ -196,3 +196,42 @@ class TestAgentConfig:
         monkeypatch.setenv("TOP_RESULTS_FOR_CITATIONS", "8")
         config = AgentConfig()
         assert config.top_results_for_citations == 8
+
+    def test_max_similar_concepts_default(self) -> None:
+        """Default max_similar_concepts is 5."""
+        config = AgentConfig()
+        assert config.max_similar_concepts == 5
+
+    def test_max_similar_concepts_override(self) -> None:
+        """Constructor override for max_similar_concepts."""
+        config = AgentConfig(max_similar_concepts=10)
+        assert config.max_similar_concepts == 10
+
+    def test_max_similar_concepts_bounds(self) -> None:
+        """max_similar_concepts must be in [1, 20]."""
+        with pytest.raises(ValidationError):
+            AgentConfig(max_similar_concepts=0)
+        with pytest.raises(ValidationError):
+            AgentConfig(max_similar_concepts=21)
+
+    def test_max_similar_concepts_env_var(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Loads from MAX_SIMILAR_CONCEPTS env var."""
+        monkeypatch.setenv("MAX_SIMILAR_CONCEPTS", "8")
+        config = AgentConfig()
+        assert config.max_similar_concepts == 8
+
+    def test_enable_cross_domain_default(self) -> None:
+        """Default enable_cross_domain is True."""
+        config = AgentConfig()
+        assert config.enable_cross_domain is True
+
+    def test_enable_cross_domain_override(self) -> None:
+        """Constructor override for enable_cross_domain."""
+        config = AgentConfig(enable_cross_domain=False)
+        assert config.enable_cross_domain is False
+
+    def test_enable_cross_domain_env_var(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Loads from ENABLE_CROSS_DOMAIN env var."""
+        monkeypatch.setenv("ENABLE_CROSS_DOMAIN", "false")
+        config = AgentConfig()
+        assert config.enable_cross_domain is False

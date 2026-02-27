@@ -326,6 +326,59 @@ def mock_mcp() -> ResearchKBClient:
         }
     )
 
+    # --- Get source response (markdown) ---
+    client.get_source.return_value = (
+        "## Double/Debiased Machine Learning for Treatment and Structural Parameters\n\n"
+        "**Authors:** Chernozhukov, Chetverikov, Demirer, Duflo, Hansen, Newey, Robins\n"
+        "**Year:** 2018\n"
+        "**Type:** Paper\n"
+        "**Source ID:** `src-001-dml`\n"
+        "**DOI:** 10.1111/ectj.12097\n\n"
+        "### Abstract\n"
+        "We revisit the classic semiparametric problem of inference on a low-dimensional\n"
+        "parameter in the presence of high-dimensional nuisance parameters.\n"
+    )
+
+    # --- Find similar concepts response (markdown) ---
+    client.find_similar_concepts.return_value = (
+        "## Similar Concepts to Double Machine Learning\n\n"
+        "| Concept | Similarity | Type |\n"
+        "|---------|-----------|------|\n"
+        "| Debiased Machine Learning | 0.95 | METHOD |\n"
+        "| Targeted Learning (TMLE) | 0.87 | METHOD |\n"
+        "| Cross-fitting | 0.85 | METHOD |\n"
+    )
+
+    # --- Cross-domain concepts response (markdown) ---
+    client.cross_domain_concepts.return_value = (
+        "## Cross-Domain Bridges: causal_inference → time_series\n\n"
+        "| Source Concept | Target Concept | Link Type | Similarity |\n"
+        "|---------------|---------------|-----------|------------|\n"
+        "| Instrumental Variables | Granger Causality | ANALOGOUS | 0.88 |\n"
+        "| Treatment Effect | Impulse Response | ANALOGOUS | 0.86 |\n"
+    )
+
+    # --- List domains response (markdown) ---
+    client.list_domains.return_value = (
+        "## Available Domains\n\n"
+        "| Domain | Sources | Concepts |\n"
+        "|--------|---------|----------|\n"
+        "| causal_inference | 312 | 145 |\n"
+        "| time_series | 98 | 52 |\n"
+        "| rag_llm | 45 | 28 |\n"
+        "| statistical_methodology | 40 | 21 |\n"
+    )
+
+    # --- Stats response (markdown) ---
+    client.stats.return_value = (
+        "## Knowledge Base Statistics\n\n"
+        "- **Sources:** 495\n"
+        "- **Chunks:** 226,432\n"
+        "- **Concepts:** 246\n"
+        "- **Relationships:** 1,847\n"
+        "- **Domains:** 4\n"
+    )
+
     # --- Explain connection response ---
     client.explain_connection.return_value = json.dumps(
         {
