@@ -38,21 +38,29 @@ pip install -e ".[dev]"                   # Editable install with dev deps
 ### Pipeline
 
 ```
-Query Planner → Literature Search → Concept Explorer → Citation Analyzer
-                                                      ↘ Assumption Auditor (conditional)
-             → Synthesis Writer
+query_planner → literature_search
+              → {concept_explorer, citation_analyzer}  (parallel fan-out)
+              → analysis_join  (sync barrier)
+              → [assumption_auditor]  (conditional)
+              → connection_explorer
+              → synthesis
 ```
 
-Conditional edge: Citation Analyzer skips Assumption Auditor if no methods were
-identified in the sub-tasks (`state.py:31` — `SubTask.methods_to_audit`).
+Parallel fan-out: concept_explorer and citation_analyzer run concurrently via
+LangGraph native fan-out, joined by analysis_join barrier.
+
+Conditional edge: analysis_join skips assumption_auditor → connection_explorer if no
+methods were identified (planner-specified or auto-discovered from graph neighbors).
 
 ### Design Decisions
 
 - **Pydantic BaseModel state** (not TypedDict) for richer type support and validation (`state.py:113`)
 - **Closure-injected dependencies** — config and MCP client injected via closure,
-  not in graph state (`graph.py:60-92`)
+  not in graph state (`graph.py:72-107`)
 - **Provider-agnostic LLM dispatch** — `create_llm()` in `llm.py` wraps `init_chat_model`; model names auto-resolve providers (`config.py:20-36`)
 - **MCP transport abstraction** — stdio (local dev) or HTTP via streamable_http_client (Docker) (`mcp_client.py:52-57`)
+- **Parallel fan-out** — LangGraph native (not asyncio.gather in a node) with `_last_value` reducer on `current_node` (`state.py:15-21`)
+- **Auto-discovered methods** — concept_explorer extracts ASSUMPTION/THEOREM neighbors → `discovered_methods` (capped at 3) (`concept_explorer.py:33`)
 
 ### Source Layout
 
@@ -64,30 +72,32 @@ src/research_agent/
 ├── exceptions.py       # ResearchAgentError hierarchy
 ├── graph.py            # LangGraph StateGraph — build_graph() + run_research()
 ├── llm.py              # Provider-agnostic LLM factory (init_chat_model wrapper)
-├── mcp_client.py       # ResearchKBClient — 7-tool MCP wrapper
+├── mcp_client.py       # ResearchKBClient — 8-tool MCP wrapper
 ├── state.py            # ResearchState + typed sub-dataclasses
 └── nodes/
-    ├── query_planner.py      # Decompose query into sub-tasks
-    ├── literature_search.py  # Hybrid search via MCP
-    ├── concept_explorer.py   # Knowledge graph exploration
-    ├── citation_analyzer.py  # Citation network analysis
-    ├── assumption_auditor.py # Method assumption auditing
-    └── synthesis.py          # Final report generation
+    ├── query_planner.py        # Decompose query into sub-tasks
+    ├── literature_search.py    # Hybrid search via MCP (domain-aware)
+    ├── concept_explorer.py     # Knowledge graph exploration + method discovery
+    ├── citation_analyzer.py    # Citation network analysis
+    ├── assumption_auditor.py   # Method assumption auditing (domain-scoped)
+    ├── connection_explorer.py  # Concept path tracing via explain_connection
+    └── synthesis.py            # Final report generation
 ```
 
 ## Research-KB Integration
 
-Seven MCP tools exposed via `ResearchKBClient` (`mcp_client.py:7-14`):
+Eight MCP tools exposed via `ResearchKBClient` (`mcp_client.py:7-15`):
 
-| Method             | MCP Tool                        | Signal                              |
-|--------------------|---------------------------------|-------------------------------------|
-| `search`           | `research_kb_search`            | BM25 + vector + graph + PageRank    |
-| `fast_search`      | `research_kb_fast_search`       | Vector-only (~200ms)                |
-| `get_concept`      | `research_kb_get_concept`       | Knowledge graph concept details     |
-| `graph_neighborhood` | `research_kb_graph_neighborhood` | N-hop concept traversal          |
-| `citation_network` | `research_kb_citation_network`  | Citing/cited-by chains              |
-| `biblio_coupling`  | `research_kb_biblio_coupling`   | Jaccard similarity on shared refs   |
-| `audit_assumptions`| `research_kb_audit_assumptions` | Method assumption documentation     |
+| Method               | MCP Tool                           | Signal                              |
+|----------------------|------------------------------------|-------------------------------------|
+| `search`             | `research_kb_search`               | BM25 + vector + graph + PageRank    |
+| `fast_search`        | `research_kb_fast_search`          | Vector-only (~200ms)                |
+| `get_concept`        | `research_kb_get_concept`          | Knowledge graph concept details     |
+| `graph_neighborhood` | `research_kb_graph_neighborhood`   | N-hop concept traversal             |
+| `citation_network`   | `research_kb_citation_network`     | Citing/cited-by chains              |
+| `biblio_coupling`    | `research_kb_biblio_coupling`      | Jaccard similarity on shared refs   |
+| `audit_assumptions`  | `research_kb_audit_assumptions`    | Method assumption documentation     |
+| `explain_connection` | `research_kb_explain_connection`   | Concept path tracing with evidence  |
 
 Each method requests JSON output (`output_format='json'`) and returns a JSON string.
 Agent nodes parse with `json.loads()` and fall back to markdown parsing on failure.
@@ -102,6 +112,7 @@ Environment variables (see `.env.example`):
 - `MCP_PATH` — MCP endpoint path appended to HTTP URL (default `/mcp`)
 - `PLANNING_MODEL`, `SYNTHESIS_MODEL` — Override model selection
 - `MAX_SEARCH_RESULTS`, `MAX_CONCEPTS`, `MAX_CITATIONS` — Limit tuning
+- `TOP_RESULTS_FOR_CITATIONS` — Number of top results for citation analysis (default: `5`)
 - `CACHE_ENABLED` — Enable/disable report cache (default: `true`)
 - `CACHE_DB_PATH` — SQLite cache file path (default: `~/.cache/research-agent/cache.db`)
 - `CACHE_TTL_HOURS` — Cache expiry in hours (default: `24`)
