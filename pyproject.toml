@@ -57,9 +57,9 @@ dev = [
 research-agent = "research_agent.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/brandonmbehring-dev/research-agent"
-Repository = "https://github.com/brandonmbehring-dev/research-agent.git"
-"Bug Tracker" = "https://github.com/brandonmbehring-dev/research-agent/issues"
+Homepage = "https://github.com/brandon-behring/research-agent"
+Repository = "https://github.com/brandon-behring/research-agent.git"
+"Bug Tracker" = "https://github.com/brandon-behring/research-agent/issues"
 
 [tool.ruff]
 line-length = 100

@@ -1,6 +1,6 @@
 # research-agent
 
-[![CI](https://github.com/brandonmbehring-dev/research-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/brandonmbehring-dev/research-agent/actions/workflows/ci.yml)
+[![CI](https://github.com/brandon-behring/research-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/brandon-behring/research-agent/actions/workflows/ci.yml)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://python.org)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://docs.astral.sh/ruff/)
@@ -83,7 +83,7 @@ flowchart LR
 
 ## Built on research-kb
 
-This agent consumes [research-kb](https://github.com/brandonmbehring-dev/research-kb), a production knowledge base system I built with:
+This agent consumes [research-kb](https://github.com/brandon-behring/research-kb), a production knowledge base system I built with:
 
 - **478 sources** in causal inference, time series, and RAG/LLM literature
 - **307K+ concepts** in a knowledge graph with typed relationships
@@ -108,13 +108,13 @@ The agent uses 7 of these tools:
 ### Prerequisites
 
 - Python 3.11+
-- [research-kb](https://github.com/brandonmbehring-dev/research-kb) cloned and set up locally
+- [research-kb](https://github.com/brandon-behring/research-kb) cloned and set up locally
 - Anthropic API key
 
 ### Installation
 
 ```bash
-git clone https://github.com/brandonmbehring-dev/research-agent.git
+git clone https://github.com/brandon-behring/research-agent.git
 cd research-agent
 
 # Option A: uv (recommended — matches CI)
