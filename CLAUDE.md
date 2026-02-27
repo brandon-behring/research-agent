@@ -24,6 +24,7 @@ research-agent --verbose -o report.md "Compare DML and IV"
 research-agent --stream "What is DML?"    # Stream progress to stderr
 research-agent --no-cache "Query"         # Bypass cache for this query
 research-agent --clear-cache              # Clear all cached reports and exit
+research-agent --health-check             # Check MCP connection health and exit
 
 # Docker (multi-service with research-kb)
 docker-compose up                         # Start agent + research-kb
@@ -61,6 +62,8 @@ methods were identified (planner-specified or auto-discovered from graph neighbo
 - **MCP transport abstraction** — stdio (local dev) or HTTP via streamable_http_client (Docker) (`mcp_client.py:52-57`)
 - **Parallel fan-out** — LangGraph native (not asyncio.gather in a node) with `_last_value` reducer on `current_node` (`state.py:15-21`)
 - **Auto-discovered methods** — concept_explorer extracts ASSUMPTION/THEOREM neighbors → `discovered_methods` (capped at 3) (`concept_explorer.py:33`)
+- **Per-node resilience** — `_make_resilient_node()` wraps each node with `asyncio.timeout` and error handling; critical nodes (planner, search, synthesis) propagate errors, others degrade gracefully (`graph.py:162-220`)
+- **Timing instrumentation** — wrapper injects `node_duration_ms` into every NodeUpdate; `StreamEvent` carries `duration_ms` and `timestamp` for per-node and total timing (`graph.py:390-406`)
 
 ### Source Layout
 
@@ -72,7 +75,7 @@ src/research_agent/
 ├── exceptions.py       # ResearchAgentError hierarchy
 ├── graph.py            # LangGraph StateGraph — build_graph() + run_research()
 ├── llm.py              # Provider-agnostic LLM factory (init_chat_model wrapper)
-├── mcp_client.py       # ResearchKBClient — 8-tool MCP wrapper
+├── mcp_client.py       # ResearchKBClient — 13-tool MCP wrapper
 ├── state.py            # ResearchState + typed sub-dataclasses
 └── nodes/
     ├── query_planner.py        # Decompose query into sub-tasks
@@ -86,7 +89,7 @@ src/research_agent/
 
 ## Research-KB Integration
 
-Eight MCP tools exposed via `ResearchKBClient` (`mcp_client.py:7-15`):
+Thirteen MCP tools exposed via `ResearchKBClient` (`mcp_client.py`):
 
 | Method               | MCP Tool                           | Signal                              |
 |----------------------|------------------------------------|-------------------------------------|
@@ -98,6 +101,11 @@ Eight MCP tools exposed via `ResearchKBClient` (`mcp_client.py:7-15`):
 | `biblio_coupling`    | `research_kb_biblio_coupling`      | Jaccard similarity on shared refs   |
 | `audit_assumptions`  | `research_kb_audit_assumptions`    | Method assumption documentation     |
 | `explain_connection` | `research_kb_explain_connection`   | Concept path tracing with evidence  |
+| `get_source`         | `research_kb_get_source`           | Full source metadata + chunks       |
+| `find_similar_concepts` | `research_kb_find_similar_concepts` | Embedding-based concept discovery |
+| `cross_domain_concepts` | `research_kb_cross_domain_concepts` | Cross-domain concept bridging     |
+| `list_domains`       | `research_kb_list_domains`         | Available KB domains                |
+| `stats`              | `research_kb_stats`                | Corpus size and composition         |
 
 Each method requests JSON output (`output_format='json'`) and returns a JSON string.
 Agent nodes parse with `json.loads()` and fall back to markdown parsing on failure.
@@ -116,3 +124,6 @@ Environment variables (see `.env.example`):
 - `CACHE_ENABLED` — Enable/disable report cache (default: `true`)
 - `CACHE_DB_PATH` — SQLite cache file path (default: `~/.cache/research-agent/cache.db`)
 - `CACHE_TTL_HOURS` — Cache expiry in hours (default: `24`)
+- `MAX_SIMILAR_CONCEPTS` — Cap on embedding-similar concepts per query (default: `5`)
+- `ENABLE_CROSS_DOMAIN` — Enable cross-domain concept bridging (default: `true`)
+- `NODE_TIMEOUTS` — Per-node timeout JSON (default: planner 60s, search 120s, synthesis 180s)
