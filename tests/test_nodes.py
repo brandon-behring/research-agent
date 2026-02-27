@@ -18,6 +18,7 @@ from research_agent.nodes.citation_analyzer import (
     citation_analyzer,
 )
 from research_agent.nodes.concept_explorer import (
+    _parse_cross_domain,
     _parse_similar_concepts,
     concept_explorer,
 )
@@ -474,6 +475,134 @@ class TestParseSimilarConcepts:
     def test_handles_empty_input(self) -> None:
         """Handles empty string."""
         assert _parse_similar_concepts("") == []
+
+
+class TestParseCrossDomain:
+    """Tests for _parse_cross_domain markdown parser."""
+
+    def test_parses_markdown_table(self) -> None:
+        """Extracts cross-domain mappings from markdown table."""
+        raw = (
+            "## Cross-Domain Bridges: causal_inference → time_series\n\n"
+            "| Source Concept | Target Concept | Link Type | Similarity |\n"
+            "|---------------|---------------|-----------|------------|\n"
+            "| IV | Granger Causality | ANALOGOUS | 0.88 |\n"
+            "| Treatment Effect | Impulse Response | ANALOGOUS | 0.86 |\n"
+        )
+        result = _parse_cross_domain(raw)
+        assert len(result) == 2
+        assert result[0]["source"] == "IV"
+        assert result[0]["target"] == "Granger Causality"
+        assert result[0]["link_type"] == "ANALOGOUS"
+        assert result[0]["similarity"] == 0.88
+        assert result[0]["source_domain"] == "causal_inference"
+        assert result[0]["target_domain"] == "time_series"
+
+    def test_returns_empty_on_no_table(self) -> None:
+        """Returns empty list when no table found."""
+        assert _parse_cross_domain("No table here") == []
+
+    def test_handles_empty_input(self) -> None:
+        """Handles empty string."""
+        assert _parse_cross_domain("") == []
+
+
+class TestCrossDomainBridging:
+    """Tests for cross-domain concept bridging in concept_explorer."""
+
+    @pytest.mark.asyncio
+    async def test_skips_single_domain(
+        self, test_config: AgentConfig, mock_mcp: ResearchKBClient
+    ) -> None:
+        """Skips cross-domain when all sub-tasks use same domain."""
+        state = ResearchState(
+            query="test",
+            sub_tasks=[
+                SubTask(
+                    description="t",
+                    concepts_to_explore=["DML"],
+                    search_domain="causal_inference",
+                ),
+            ],
+        )
+        result = await concept_explorer(state, test_config, mock_mcp)
+        assert result["cross_domain_matches"] == []
+        mock_mcp.cross_domain_concepts.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_triggers_on_multi_domain(
+        self, test_config: AgentConfig, mock_mcp: ResearchKBClient
+    ) -> None:
+        """Triggers cross-domain when sub-tasks span multiple domains."""
+        state = ResearchState(
+            query="test",
+            sub_tasks=[
+                SubTask(
+                    description="t1",
+                    concepts_to_explore=["DML"],
+                    search_domain="causal_inference",
+                ),
+                SubTask(
+                    description="t2",
+                    concepts_to_explore=[],
+                    search_domain="time_series",
+                ),
+            ],
+        )
+        result = await concept_explorer(state, test_config, mock_mcp)
+        assert len(result["cross_domain_matches"]) > 0
+        mock_mcp.cross_domain_concepts.assert_awaited()
+
+    @pytest.mark.asyncio
+    async def test_graceful_on_cross_domain_failure(
+        self, test_config: AgentConfig, mock_mcp: ResearchKBClient
+    ) -> None:
+        """Cross-domain failure doesn't block concept exploration."""
+        mock_mcp.cross_domain_concepts.side_effect = RuntimeError("not found")
+        state = ResearchState(
+            query="test",
+            sub_tasks=[
+                SubTask(
+                    description="t1",
+                    concepts_to_explore=["DML"],
+                    search_domain="causal_inference",
+                ),
+                SubTask(
+                    description="t2",
+                    concepts_to_explore=[],
+                    search_domain="time_series",
+                ),
+            ],
+        )
+        result = await concept_explorer(state, test_config, mock_mcp)
+        assert len(result["concepts"]) == 1  # Main exploration works
+        assert result["cross_domain_matches"] == []
+
+    @pytest.mark.asyncio
+    async def test_respects_enable_cross_domain_false(self, mock_mcp: ResearchKBClient) -> None:
+        """Skips cross-domain when config disables it."""
+        from research_agent.config import AgentConfig, MCPConfig, ModelConfig
+
+        config = AgentConfig(
+            models=ModelConfig(planning="test", synthesis="test"),
+            mcp=MCPConfig(transport="stdio", research_kb_path="/fake"),
+            max_concepts=3,
+            enable_cross_domain=False,
+        )
+        state = ResearchState(
+            query="test",
+            sub_tasks=[
+                SubTask(
+                    description="t1",
+                    concepts_to_explore=["DML"],
+                    search_domain="causal_inference",
+                ),
+                SubTask(description="t2", search_domain="time_series"),
+            ],
+        )
+        result = await concept_explorer(state, config, mock_mcp)
+        assert result["cross_domain_matches"] == []
+        mock_mcp.cross_domain_concepts.assert_not_awaited()
 
 
 class TestCitationAnalyzer:

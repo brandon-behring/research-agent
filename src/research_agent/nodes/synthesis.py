@@ -168,6 +168,18 @@ def _build_evidence_context(state: ResearchState) -> str:
                     )
         sections.append("\n".join(cite_lines))
 
+    # Cross-domain bridges
+    if state.cross_domain_matches:
+        xd_lines = [f"## Cross-Domain Bridges ({len(state.cross_domain_matches)})"]
+        for m in state.cross_domain_matches:
+            src = m.get("source", "?")
+            tgt = m.get("target", "?")
+            src_dom = m.get("source_domain", "?")
+            tgt_dom = m.get("target_domain", "?")
+            link = m.get("link_type", "?")
+            xd_lines.append(f"- {src} ({src_dom}) \u2194 {tgt} ({tgt_dom}) [{link}]")
+        sections.append("\n".join(xd_lines))
+
     # Source details (enriched metadata from get_source)
     if state.source_details:
         detail_lines = [f"## Source Details ({len(state.source_details)} enriched)"]

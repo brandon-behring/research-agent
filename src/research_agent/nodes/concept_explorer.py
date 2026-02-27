@@ -239,6 +239,57 @@ def _parse_similar_concepts(raw: str) -> list[dict[str, Any]]:
     return results
 
 
+def _parse_cross_domain(raw: str) -> list[dict[str, Any]]:
+    """Parse cross_domain_concepts markdown response.
+
+    Expected format::
+
+        ## Cross-Domain Bridges: X → Y
+        | Source Concept | Target Concept | Link Type | Similarity |
+        |---------------|---------------|-----------|------------|
+        | IV | Granger Causality | ANALOGOUS | 0.88 |
+
+    Args:
+        raw: Markdown string from research_kb_cross_domain_concepts.
+
+    Returns:
+        List of dicts with source, target, link_type, similarity keys.
+    """
+    results: list[dict[str, Any]] = []
+    # Extract source_domain → target_domain from header
+    source_domain = ""
+    target_domain = ""
+    for line in raw.split("\n"):
+        if "→" in line and line.startswith("#"):
+            parts = line.split("→")
+            if len(parts) == 2:
+                source_domain = parts[0].split(":")[-1].strip().rstrip("#").strip()
+                target_domain = parts[1].strip()
+            break
+
+    for line in raw.split("\n"):
+        line = line.strip()
+        if not line.startswith("|") or "---" in line:
+            continue
+        cells = [c.strip() for c in line.split("|")[1:-1]]
+        if len(cells) >= 4 and cells[0].lower() not in ("source concept", ""):
+            try:
+                similarity = float(cells[3])
+            except (ValueError, IndexError):
+                similarity = 0.0
+            results.append(
+                {
+                    "source": cells[0],
+                    "target": cells[1],
+                    "link_type": cells[2],
+                    "similarity": similarity,
+                    "source_domain": source_domain,
+                    "target_domain": target_domain,
+                }
+            )
+    return results
+
+
 @dataclass
 class _ExploreResult:
     """Internal result from _explore_one, carrying concept + discovered neighbors."""
@@ -415,12 +466,43 @@ async def concept_explorer(
     # Cap similar concepts to config limit
     similar_concepts = all_similar[: config.max_similar_concepts]
 
+    # Phase 2: Cross-domain bridging (only if multi-domain query)
+    cross_domain_matches: list[dict[str, Any]] = []
+    if config.enable_cross_domain:
+        domains = {t.search_domain for t in state.sub_tasks if t.search_domain}
+        if len(domains) >= 2:
+            domain_list = sorted(domains)
+            concepts_with_ids = [c for c in concepts if c.concept_id][:5]
+            for concept in concepts_with_ids:
+                for i, src_dom in enumerate(domain_list):
+                    for tgt_dom in domain_list[i + 1 :]:
+                        try:
+                            raw = await mcp.cross_domain_concepts(
+                                src_dom,
+                                tgt_dom,
+                                concept_id=concept.concept_id,
+                            )
+                            matches = _parse_cross_domain(raw)
+                            cross_domain_matches.extend(matches)
+                        except (MCPToolError, RuntimeError) as e:
+                            logger.debug(
+                                "cross_domain_concepts failed for %s (%s→%s): %s",
+                                concept.name,
+                                src_dom,
+                                tgt_dom,
+                                e,
+                            )
+            if cross_domain_matches:
+                logger.info("Found %d cross-domain bridges", len(cross_domain_matches))
+
     summary = f"Explored {len(unique_names)} concepts, found {len(concepts)} total entries."
     if discovered_methods:
         methods_str = ", ".join(discovered_methods)
         summary += f" Auto-discovered {len(discovered_methods)} methods: {methods_str}."
     if similar_concepts:
         summary += f" Found {len(similar_concepts)} similar concepts."
+    if cross_domain_matches:
+        summary += f" Found {len(cross_domain_matches)} cross-domain bridges."
     logger.info(summary)
 
     return NodeUpdate(
@@ -428,5 +510,6 @@ async def concept_explorer(
         concept_map_summary=summary,
         discovered_methods=discovered_methods,
         similar_concepts=similar_concepts,
+        cross_domain_matches=cross_domain_matches,
         current_node="concept_explorer",
     )

@@ -291,6 +291,36 @@ class TestSimilarConceptsSection:
         assert "Embedding-Similar" not in ctx
 
 
+class TestCrossDomainSection:
+    """Tests for cross-domain bridges in evidence context."""
+
+    def test_includes_cross_domain_matches(self) -> None:
+        """Cross-domain section appears when populated."""
+        state = ResearchState(
+            query="test",
+            planning_rationale="plan",
+            cross_domain_matches=[
+                {
+                    "source": "IV",
+                    "target": "Granger Causality",
+                    "source_domain": "causal_inference",
+                    "target_domain": "time_series",
+                    "link_type": "ANALOGOUS",
+                },
+            ],
+        )
+        ctx = _build_evidence_context(state)
+        assert "Cross-Domain Bridges (1)" in ctx
+        assert "IV (causal_inference)" in ctx
+        assert "Granger Causality (time_series)" in ctx
+
+    def test_omits_cross_domain_when_empty(self) -> None:
+        """No cross-domain section when list is empty."""
+        state = ResearchState(query="test", planning_rationale="plan")
+        ctx = _build_evidence_context(state)
+        assert "Cross-Domain" not in ctx
+
+
 class TestSourceDetailsSection:
     """Tests for source details in evidence context."""
 
