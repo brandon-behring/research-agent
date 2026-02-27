@@ -4,6 +4,7 @@ Usage:
     research-agent "What are the assumptions of double machine learning?"
     research-agent --verbose -o report.md "Compare DML and IV"
     research-agent --clear-cache
+    research-agent --health-check
 """
 
 from __future__ import annotations
@@ -20,6 +21,7 @@ from research_agent.cache import ReportCache, compute_cache_key
 from research_agent.config import AgentConfig
 from research_agent.exceptions import ResearchAgentError
 from research_agent.graph import run_research, stream_research
+from research_agent.mcp_client import ResearchKBClient
 
 
 def _extract_metadata(result: dict[str, Any]) -> dict[str, Any]:
@@ -88,6 +90,60 @@ async def _run_streaming(query: str, config: AgentConfig) -> dict[str, str]:
     return {"report": report}
 
 
+async def _run_health_check(config: AgentConfig) -> bool:
+    """Connect to MCP, run a test search, and report status.
+
+    Args:
+        config: Agent configuration (MCP transport settings).
+
+    Returns:
+        True if health check passes, False otherwise.
+    """
+    import time
+
+    print("Health check: connecting to research-kb...", file=sys.stderr)
+    start = time.monotonic()
+    try:
+        async with ResearchKBClient(config.mcp) as mcp:
+            elapsed_connect = time.monotonic() - start
+            print(
+                f"  Connected ({elapsed_connect:.1f}s)",
+                file=sys.stderr,
+            )
+
+            search_start = time.monotonic()
+            result = await mcp.fast_search("test", limit=1)
+            elapsed_search = time.monotonic() - search_start
+            # Result should be non-empty string
+            ok = bool(result and result.strip())
+            status = "OK" if ok else "WARN: empty response"
+            print(
+                f"  fast_search: {status} ({elapsed_search:.1f}s)",
+                file=sys.stderr,
+            )
+
+            # Optional: fetch stats for corpus info
+            try:
+                stats_raw = await mcp.stats()
+                if stats_raw:
+                    # Extract first few lines for summary
+                    summary = stats_raw.strip().split("\n")[0]
+                    print(f"  KB: {summary}", file=sys.stderr)
+            except Exception:
+                pass  # Stats are optional for health check
+
+        total = time.monotonic() - start
+        print(f"  Total: {total:.1f}s — HEALTHY", file=sys.stderr)
+        return True
+    except Exception as e:
+        total = time.monotonic() - start
+        print(
+            f"  UNHEALTHY after {total:.1f}s: {e}",
+            file=sys.stderr,
+        )
+        return False
+
+
 def main() -> None:
     """CLI entry point.
 
@@ -133,6 +189,11 @@ def main() -> None:
         action="store_true",
         help="Clear all cached reports and exit",
     )
+    parser.add_argument(
+        "--health-check",
+        action="store_true",
+        help="Check MCP connection and exit (no query required)",
+    )
 
     args = parser.parse_args()
 
@@ -145,6 +206,11 @@ def main() -> None:
     )
 
     config = AgentConfig()
+
+    # Handle --health-check early exit (no query required)
+    if args.health_check:
+        ok = asyncio.run(_run_health_check(config))
+        sys.exit(0 if ok else 1)
 
     # Handle --clear-cache early exit (no query required)
     if args.clear_cache:

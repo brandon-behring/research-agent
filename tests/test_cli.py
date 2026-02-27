@@ -225,3 +225,87 @@ class TestCLIUnitLevel:
             mock_stream.return_value = mock_result
             main()
             assert "Streamed Report" in mock_stdout.getvalue()
+
+
+class TestHealthCheck:
+    """Tests for --health-check CLI flag."""
+
+    def test_health_check_flag_accepted(self) -> None:
+        """--health-check is a recognized flag."""
+        result = subprocess.run(
+            [sys.executable, "-m", "research_agent.cli", "--help"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        assert "--health-check" in result.stdout
+
+    def test_health_check_success_exits_0(self) -> None:
+        """Successful health check exits 0."""
+        with (
+            patch(
+                "research_agent.cli._run_health_check",
+                new_callable=AsyncMock,
+                return_value=True,
+            ),
+            patch("sys.argv", ["cli", "--health-check"]),
+            pytest.raises(SystemExit) as exc_info,
+        ):
+            main()
+        assert exc_info.value.code == 0
+
+    def test_health_check_failure_exits_1(self) -> None:
+        """Failed health check exits 1."""
+        with (
+            patch(
+                "research_agent.cli._run_health_check",
+                new_callable=AsyncMock,
+                return_value=False,
+            ),
+            patch("sys.argv", ["cli", "--health-check"]),
+            pytest.raises(SystemExit) as exc_info,
+        ):
+            main()
+        assert exc_info.value.code == 1
+
+    @pytest.mark.asyncio
+    async def test_run_health_check_success(self) -> None:
+        """_run_health_check returns True when MCP responds."""
+        from research_agent.cli import _run_health_check
+        from research_agent.config import AgentConfig, MCPConfig
+
+        config = AgentConfig(
+            mcp=MCPConfig(transport="stdio", research_kb_path="/fake"),
+        )
+        mock_mcp = AsyncMock()
+        mock_mcp.fast_search.return_value = "some results"
+        mock_mcp.stats.return_value = "## Stats\n- Sources: 100"
+        with (
+            patch(
+                "research_agent.cli.ResearchKBClient.__aenter__",
+                return_value=mock_mcp,
+            ),
+            patch(
+                "research_agent.cli.ResearchKBClient.__aexit__",
+                return_value=None,
+            ),
+        ):
+            result = await _run_health_check(config)
+        assert result is True
+        mock_mcp.fast_search.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_run_health_check_connection_failure(self) -> None:
+        """_run_health_check returns False on connection failure."""
+        from research_agent.cli import _run_health_check
+        from research_agent.config import AgentConfig, MCPConfig
+
+        config = AgentConfig(
+            mcp=MCPConfig(transport="stdio", research_kb_path="/fake"),
+        )
+        with patch(
+            "research_agent.cli.ResearchKBClient.__aenter__",
+            side_effect=RuntimeError("connection refused"),
+        ):
+            result = await _run_health_check(config)
+        assert result is False
