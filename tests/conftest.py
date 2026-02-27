@@ -326,6 +326,38 @@ def mock_mcp() -> ResearchKBClient:
         }
     )
 
+    # --- Explain connection response ---
+    client.explain_connection.return_value = json.dumps(
+        {
+            "concept_a": "double machine learning",
+            "concept_b": "cross-fitting",
+            "path_length": 1,
+            "path_explanation": "DML directly uses cross-fitting for sample splitting.",
+            "path": [
+                {
+                    "concept_name": "double machine learning",
+                    "concept_type": "METHOD",
+                    "evidence": [
+                        {
+                            "text": "DML uses cross-fitting to partition samples.",
+                            "source": "Chernozhukov et al. (2018)",
+                        },
+                    ],
+                },
+                {
+                    "concept_name": "cross-fitting",
+                    "concept_type": "METHOD",
+                    "evidence": [
+                        {
+                            "text": "Cross-fitting prevents overfitting in nuisance estimation.",
+                            "source": "Newey and Robins (2018)",
+                        },
+                    ],
+                },
+            ],
+        }
+    )
+
     return client
 
 

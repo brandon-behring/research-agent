@@ -4,7 +4,7 @@ Architecture:
     This module abstracts the MCP transport (stdio or HTTP) so agent nodes
     call clean Python methods without knowing how research-kb is connected.
 
-    Seven tools exposed (of research-kb's 20+):
+    Eight tools exposed (of research-kb's 20+):
         1. search           -- 4-signal hybrid search (BM25 + vector + graph + PageRank)
         2. fast_search      -- lightweight vector-only fallback
         3. get_concept      -- retrieve concept details from knowledge graph
@@ -12,6 +12,7 @@ Architecture:
         5. citation_network -- find citing/cited-by chains for a source
         6. biblio_coupling  -- related papers via shared reference overlap
         7. audit_assumptions -- method assumption documentation
+        8. explain_connection -- trace path between concepts with evidence
 
     Each method requests JSON output (``output_format='json'``) and returns
     the raw JSON string. Agent nodes parse with ``json.loads()`` and fall
@@ -216,6 +217,9 @@ class ResearchKBClient:
         context_type: str = "balanced",
         use_graph: bool = True,
         use_rerank: bool = True,
+        use_citations: bool = True,
+        citation_weight: float = 0.15,
+        use_expand: bool = True,
     ) -> str:
         """Hybrid search: BM25 + vector + graph + PageRank.
 
@@ -226,6 +230,9 @@ class ResearchKBClient:
             context_type: Search weighting ('building', 'auditing', 'balanced').
             use_graph: Include knowledge graph signals.
             use_rerank: Apply cross-encoder reranking.
+            use_citations: Include citation PageRank signal.
+            citation_weight: Weight for citation signal (0.0-1.0).
+            use_expand: Expand query via HyDE.
 
         Returns:
             JSON string with search results and scores.
@@ -236,6 +243,9 @@ class ResearchKBClient:
             "context_type": context_type,
             "use_graph": use_graph,
             "use_rerank": use_rerank,
+            "use_citations": use_citations,
+            "citation_weight": citation_weight,
+            "use_expand": use_expand,
             "output_format": "json",
         }
         if domain:
@@ -362,21 +372,61 @@ class ResearchKBClient:
         self,
         method_name: str,
         include_docstring: bool = True,
+        domain: str | None = None,
+        scope: str = "general",
     ) -> str:
         """Audit method assumptions (e.g., DML, IV, DiD, RDD).
 
         Args:
             method_name: Statistical method name or alias.
             include_docstring: Include Python docstring snippet.
+            domain: Optional domain context ('causal_inference', 'time_series').
+            scope: Audit scope ('general' or 'applied').
 
         Returns:
             JSON string with assumptions, violation consequences, verification approaches.
         """
+        args: dict[str, Any] = {
+            "method_name": method_name,
+            "include_docstring": include_docstring,
+            "output_format": "json",
+        }
+        if domain:
+            args["domain"] = domain
+        if scope != "general":
+            args["scope"] = scope
+        return await self._call_tool("research_kb_audit_assumptions", args)
+
+    # -- Connection tools -------------------------------------------------------
+
+    async def explain_connection(
+        self,
+        concept_a: str,
+        concept_b: str,
+        style: str = "research",
+        max_evidence_per_step: int = 2,
+        use_llm: bool = False,
+    ) -> str:
+        """Trace path between concepts with evidence (graph-only, no LLM synthesis).
+
+        Args:
+            concept_a: Source concept name.
+            concept_b: Target concept name.
+            style: Explanation style ('research', 'teaching', 'brief').
+            max_evidence_per_step: Evidence chunks per path step.
+            use_llm: Whether to use LLM for narrative (False = graph-only).
+
+        Returns:
+            JSON string with path steps and evidence chunks.
+        """
         return await self._call_tool(
-            "research_kb_audit_assumptions",
+            "research_kb_explain_connection",
             {
-                "method_name": method_name,
-                "include_docstring": include_docstring,
+                "concept_a": concept_a,
+                "concept_b": concept_b,
+                "style": style,
+                "max_evidence_per_step": max_evidence_per_step,
+                "use_llm": use_llm,
                 "output_format": "json",
             },
         )

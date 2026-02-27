@@ -111,8 +111,15 @@ class TestMCPClientInterface:
         client = ResearchKBClient(config)
         assert hasattr(client, "audit_assumptions")
 
-    def test_all_seven_tools_present(self) -> None:
-        """All 7 tool methods exist on the client."""
+    def test_explain_connection_method_exists(self) -> None:
+        """explain_connection() method exists."""
+        config = MCPConfig(transport="stdio", research_kb_path="/fake")
+        client = ResearchKBClient(config)
+        assert hasattr(client, "explain_connection")
+        assert callable(client.explain_connection)
+
+    def test_all_eight_tools_present(self) -> None:
+        """All 8 tool methods exist on the client."""
         config = MCPConfig(transport="stdio", research_kb_path="/fake")
         client = ResearchKBClient(config)
         expected_tools = [
@@ -123,6 +130,7 @@ class TestMCPClientInterface:
             "citation_network",
             "biblio_coupling",
             "audit_assumptions",
+            "explain_connection",
         ]
         for tool in expected_tools:
             assert hasattr(client, tool), f"Missing tool method: {tool}"
@@ -276,6 +284,9 @@ class TestToolArgumentForwarding:
             context_type="auditing",
             use_graph=False,
             use_rerank=False,
+            use_citations=False,
+            citation_weight=0.25,
+            use_expand=False,
         )
         session.call_tool.assert_awaited_once_with(
             "research_kb_search",
@@ -286,6 +297,9 @@ class TestToolArgumentForwarding:
                 "context_type": "auditing",
                 "use_graph": False,
                 "use_rerank": False,
+                "use_citations": False,
+                "citation_weight": 0.25,
+                "use_expand": False,
                 "output_format": "json",
             },
         )
@@ -300,6 +314,8 @@ class TestToolArgumentForwarding:
         args = session.call_tool.call_args[0][1]
         assert "domain" not in args
         assert args["query"] == "DML"
+        assert args["use_citations"] is True
+        assert args["use_expand"] is True
         assert args["output_format"] == "json"
 
     @pytest.mark.asyncio
@@ -388,10 +404,63 @@ class TestToolArgumentForwarding:
         """audit_assumptions() forwards method_name and include_docstring."""
         client, session = connected_client
         await client.audit_assumptions(method_name="DML", include_docstring=False)
-        session.call_tool.assert_awaited_once_with(
-            "research_kb_audit_assumptions",
-            {"method_name": "DML", "include_docstring": False, "output_format": "json"},
+        args = session.call_tool.call_args[0][1]
+        assert args["method_name"] == "DML"
+        assert args["include_docstring"] is False
+        assert "domain" not in args  # None → omitted
+        assert "scope" not in args  # "general" → omitted
+
+    @pytest.mark.asyncio
+    async def test_audit_assumptions_with_domain_scope(
+        self, connected_client: tuple[ResearchKBClient, AsyncMock]
+    ) -> None:
+        """audit_assumptions() forwards domain and scope when non-default."""
+        client, session = connected_client
+        await client.audit_assumptions(
+            method_name="DML",
+            domain="causal_inference",
+            scope="applied",
         )
+        args = session.call_tool.call_args[0][1]
+        assert args["domain"] == "causal_inference"
+        assert args["scope"] == "applied"
+
+    @pytest.mark.asyncio
+    async def test_explain_connection_forwards_args(
+        self, connected_client: tuple[ResearchKBClient, AsyncMock]
+    ) -> None:
+        """explain_connection() forwards all parameters."""
+        client, session = connected_client
+        await client.explain_connection(
+            concept_a="DML",
+            concept_b="cross-fitting",
+            style="teaching",
+            max_evidence_per_step=3,
+            use_llm=False,
+        )
+        session.call_tool.assert_awaited_once_with(
+            "research_kb_explain_connection",
+            {
+                "concept_a": "DML",
+                "concept_b": "cross-fitting",
+                "style": "teaching",
+                "max_evidence_per_step": 3,
+                "use_llm": False,
+                "output_format": "json",
+            },
+        )
+
+    @pytest.mark.asyncio
+    async def test_explain_connection_defaults(
+        self, connected_client: tuple[ResearchKBClient, AsyncMock]
+    ) -> None:
+        """explain_connection() uses sensible defaults."""
+        client, session = connected_client
+        await client.explain_connection(concept_a="A", concept_b="B")
+        args = session.call_tool.call_args[0][1]
+        assert args["style"] == "research"
+        assert args["max_evidence_per_step"] == 2
+        assert args["use_llm"] is False
 
 
 class TestCallTool:
