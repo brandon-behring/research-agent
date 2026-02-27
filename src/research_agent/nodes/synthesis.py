@@ -38,11 +38,18 @@ Your report must include:
    - A confidence level (high/medium/low) reflecting how well-supported the finding is
    - A count of how many distinct sources support it (source_count)
    - Supporting citations in the text
-3. **Concept Map** -- How the key concepts relate to each other
-4. **Citation Landscape** -- Seminal papers, recent developments, citation chains
-5. **Methodological Considerations** -- Assumptions, limitations, verification approaches
-6. **Gaps & Limitations** -- What the KB didn't cover, where evidence is thin
-7. **Confidence Assessment** -- How reliable are these findings? (high/medium/low with reasoning)
+3. **Concept Map** -- How the key concepts relate to each other (prose description)
+4. **Concept Map (Mermaid)** -- Mermaid graph syntax showing relationships:
+   ```
+   graph TD
+     A[Concept A] -->|relationship| B[Concept B]
+   ```
+   Use descriptive edge labels. Include 3-8 key concepts.
+5. **Citation Landscape** -- Seminal papers, recent developments, citation chains
+6. **Methodological Considerations** -- Assumptions, limitations, verification approaches
+7. **Gaps & Limitations** -- What the KB didn't cover, where evidence is thin
+8. **Next Research Questions** -- 2-4 follow-up questions suggested by gaps/limitations
+9. **Confidence Assessment** -- How reliable are these findings? (high/medium/low with reasoning)
 
 Finding confidence guidelines:
 - HIGH: Multiple high-scoring sources (>=0.8) directly support this finding
@@ -83,11 +90,23 @@ class SynthesisReport(BaseModel):
         description="Main discoveries, each with confidence level and source count",
     )
     concept_map: str = Field(description="How key concepts relate to each other")
+    concept_map_mermaid: str = Field(
+        default="",
+        description=(
+            "Mermaid graph syntax showing concept relationships. "
+            "Use 'graph TD' with labeled edges. Example: "
+            "graph TD\\n  A[DML] -->|uses| B[Cross-fitting]"
+        ),
+    )
     citation_landscape: str = Field(description="Seminal papers, recent developments, chains")
     methodological_considerations: str = Field(
         description="Assumptions, limitations, verification approaches"
     )
     gaps_limitations: str = Field(description="What the KB didn't cover, thin evidence areas")
+    next_questions: list[str] = Field(
+        default_factory=list,
+        description="Follow-up research questions suggested by gaps and limitations",
+    )
     confidence_level: Literal["high", "medium", "low"] = Field(
         description="Overall reliability of findings"
     )
@@ -96,18 +115,36 @@ class SynthesisReport(BaseModel):
     def to_markdown(self) -> str:
         """Render the report as a markdown document."""
         findings = "\n".join(f"- {f.to_markdown()}" for f in self.key_findings)
-        return (
+
+        parts = [
             f"# Research Report\n\n"
             f"## Executive Summary\n\n{self.executive_summary}\n\n"
             f"## Key Findings\n\n{findings}\n\n"
-            f"## Concept Map\n\n{self.concept_map}\n\n"
-            f"## Citation Landscape\n\n{self.citation_landscape}\n\n"
+            f"## Concept Map\n\n{self.concept_map}",
+        ]
+
+        if self.concept_map_mermaid:
+            parts.append(
+                f"\n\n```mermaid\n{self.concept_map_mermaid}\n```"
+            )
+
+        parts.append(
+            f"\n\n## Citation Landscape\n\n{self.citation_landscape}\n\n"
             f"## Methodological Considerations\n\n{self.methodological_considerations}\n\n"
-            f"## Gaps & Limitations\n\n{self.gaps_limitations}\n\n"
-            f"## Confidence Assessment\n\n"
+            f"## Gaps & Limitations\n\n{self.gaps_limitations}"
+        )
+
+        if self.next_questions:
+            questions = "\n".join(f"- {q}" for q in self.next_questions)
+            parts.append(f"\n\n## Next Research Questions\n\n{questions}")
+
+        parts.append(
+            f"\n\n## Confidence Assessment\n\n"
             f"**Level**: {self.confidence_level}\n\n"
             f"{self.confidence_reasoning}\n"
         )
+
+        return "".join(parts)
 
 
 def _build_evidence_context(state: ResearchState) -> str:

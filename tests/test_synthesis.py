@@ -424,3 +424,69 @@ class TestSynthesisReportMarkdown:
         assert "[HIGH] (2 sources) Finding A" in md
         assert "[LOW] Finding B" in md
         assert "## Key Findings" in md
+
+    def test_mermaid_concept_map_rendered(self) -> None:
+        """concept_map_mermaid renders as fenced code block."""
+        report = SynthesisReport(
+            executive_summary="S",
+            key_findings=[Finding(text="F", confidence="low")],
+            concept_map="A -> B",
+            concept_map_mermaid="graph TD\n  A[DML] -->|uses| B[Cross-fitting]",
+            citation_landscape="C",
+            methodological_considerations="M",
+            gaps_limitations="G",
+            confidence_level="low",
+            confidence_reasoning="R",
+        )
+        md = report.to_markdown()
+        assert "```mermaid" in md
+        assert "graph TD" in md
+        assert "A[DML] -->|uses| B[Cross-fitting]" in md
+
+    def test_no_mermaid_when_empty(self) -> None:
+        """Empty concept_map_mermaid omits fenced block."""
+        report = SynthesisReport(
+            executive_summary="S",
+            key_findings=[Finding(text="F", confidence="low")],
+            concept_map="A -> B",
+            citation_landscape="C",
+            methodological_considerations="M",
+            gaps_limitations="G",
+            confidence_level="low",
+            confidence_reasoning="R",
+        )
+        md = report.to_markdown()
+        assert "```mermaid" not in md
+
+    def test_next_questions_rendered(self) -> None:
+        """next_questions renders as bulleted list."""
+        report = SynthesisReport(
+            executive_summary="S",
+            key_findings=[Finding(text="F", confidence="low")],
+            concept_map="A -> B",
+            citation_landscape="C",
+            methodological_considerations="M",
+            gaps_limitations="G",
+            next_questions=["What about X?", "How does Y work?"],
+            confidence_level="low",
+            confidence_reasoning="R",
+        )
+        md = report.to_markdown()
+        assert "## Next Research Questions" in md
+        assert "- What about X?" in md
+        assert "- How does Y work?" in md
+
+    def test_no_next_questions_when_empty(self) -> None:
+        """Empty next_questions omits section."""
+        report = SynthesisReport(
+            executive_summary="S",
+            key_findings=[Finding(text="F", confidence="low")],
+            concept_map="A -> B",
+            citation_landscape="C",
+            methodological_considerations="M",
+            gaps_limitations="G",
+            confidence_level="low",
+            confidence_reasoning="R",
+        )
+        md = report.to_markdown()
+        assert "Next Research Questions" not in md
