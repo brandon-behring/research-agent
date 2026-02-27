@@ -8,6 +8,11 @@ repos:
       - id: check-added-large-files
         args: ['--maxkb=500']
 
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.24.2
+    hooks:
+      - id: gitleaks
+
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.9.0
     hooks:
