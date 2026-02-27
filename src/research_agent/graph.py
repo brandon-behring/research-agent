@@ -21,9 +21,11 @@ Design decisions:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
-from collections.abc import AsyncGenerator
+import time
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -31,7 +33,7 @@ from langgraph.graph import END, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
 from research_agent.config import AgentConfig
-from research_agent.exceptions import MCPToolError, PlannerError
+from research_agent.exceptions import MCPToolError, NodeTimeoutError, PlannerError
 from research_agent.mcp_client import ResearchKBClient
 from research_agent.nodes.assumption_auditor import assumption_auditor
 from research_agent.nodes.citation_analyzer import citation_analyzer
@@ -151,6 +153,72 @@ async def _fetch_kb_context(mcp: ResearchKBClient) -> tuple[list[str], str]:
     return kb_domains, kb_stats_summary
 
 
+# Nodes where errors must propagate — pipeline can't produce useful output without them.
+_CRITICAL_NODES = frozenset({"query_planner", "literature_search", "synthesis"})
+
+# Default timeout for nodes not listed in config.node_timeouts.
+_DEFAULT_NODE_TIMEOUT_S = 120
+
+
+def _make_resilient_node(
+    name: str,
+    node_fn: Callable[[ResearchState], Awaitable[NodeUpdate]],
+    timeout_s: int,
+) -> Callable[[ResearchState], Awaitable[NodeUpdate]]:
+    """Wrap a node with per-node timeout and graceful error handling.
+
+    Critical nodes (query_planner, literature_search, synthesis) propagate
+    all errors. Non-critical analysis nodes return an empty NodeUpdate on
+    failure, allowing the pipeline to continue with partial data.
+
+    Args:
+        name: Node name for logging and critical/non-critical classification.
+        node_fn: The async node function to wrap.
+        timeout_s: Maximum execution time in seconds.
+
+    Returns:
+        Wrapped async node function with timeout and error handling.
+    """
+    critical = name in _CRITICAL_NODES
+
+    async def wrapper(state: ResearchState) -> NodeUpdate:
+        start = time.monotonic()
+        try:
+            async with asyncio.timeout(timeout_s):
+                result = await node_fn(state)
+            elapsed = time.monotonic() - start
+            logger.debug("Node '%s' completed in %.1fs", name, elapsed)
+            return result
+        except TimeoutError:
+            elapsed = time.monotonic() - start
+            logger.error(
+                "Node '%s' timed out after %.1fs (limit: %ds)",
+                name,
+                elapsed,
+                timeout_s,
+            )
+            if critical:
+                raise NodeTimeoutError(name, timeout_s) from None
+            return NodeUpdate(current_node=name)
+        except NodeTimeoutError:
+            raise
+        except Exception as exc:
+            elapsed = time.monotonic() - start
+            logger.error(
+                "Node '%s' failed after %.1fs: %s",
+                name,
+                elapsed,
+                exc,
+            )
+            if critical:
+                raise
+            return NodeUpdate(current_node=name)
+
+    wrapper.__name__ = f"_resilient_{name}"
+    wrapper.__qualname__ = f"_make_resilient_node.<locals>._resilient_{name}"
+    return wrapper
+
+
 def _passthrough(state: ResearchState) -> NodeUpdate:
     """No-op join barrier node.
 
@@ -175,6 +243,11 @@ def build_graph(config: AgentConfig, mcp: ResearchKBClient) -> CompiledStateGrap
         Compiled StateGraph ready for invocation.
     """
 
+    timeouts = config.node_timeouts
+
+    def _timeout(name: str) -> int:
+        return timeouts.get(name, _DEFAULT_NODE_TIMEOUT_S)
+
     # Wrap nodes to inject dependencies
     async def _query_planner(state: ResearchState) -> NodeUpdate:
         return await query_planner(state, config)
@@ -197,18 +270,48 @@ def build_graph(config: AgentConfig, mcp: ResearchKBClient) -> CompiledStateGrap
     async def _synthesis_writer(state: ResearchState) -> NodeUpdate:
         return await synthesis_writer(state, config)
 
-    # Build graph
+    # Build graph — each node wrapped with timeout + error handling
     graph: StateGraph[ResearchState] = StateGraph(ResearchState)
 
-    # Add nodes
-    graph.add_node("query_planner", _query_planner)
-    graph.add_node("literature_search", _literature_search)
-    graph.add_node("concept_explorer", _concept_explorer)
-    graph.add_node("citation_analyzer", _citation_analyzer)
+    graph.add_node(
+        "query_planner",
+        _make_resilient_node("query_planner", _query_planner, _timeout("query_planner")),
+    )
+    graph.add_node(
+        "literature_search",
+        _make_resilient_node(
+            "literature_search", _literature_search, _timeout("literature_search")
+        ),
+    )
+    graph.add_node(
+        "concept_explorer",
+        _make_resilient_node("concept_explorer", _concept_explorer, _timeout("concept_explorer")),
+    )
+    graph.add_node(
+        "citation_analyzer",
+        _make_resilient_node(
+            "citation_analyzer", _citation_analyzer, _timeout("citation_analyzer")
+        ),
+    )
     graph.add_node("analysis_join", _passthrough)
-    graph.add_node("assumption_auditor", _assumption_auditor)
-    graph.add_node("connection_explorer", _connection_explorer)
-    graph.add_node("synthesis", _synthesis_writer)
+    graph.add_node(
+        "assumption_auditor",
+        _make_resilient_node(
+            "assumption_auditor", _assumption_auditor, _timeout("assumption_auditor")
+        ),
+    )
+    graph.add_node(
+        "connection_explorer",
+        _make_resilient_node(
+            "connection_explorer",
+            _connection_explorer,
+            _timeout("connection_explorer"),
+        ),
+    )
+    graph.add_node(
+        "synthesis",
+        _make_resilient_node("synthesis", _synthesis_writer, _timeout("synthesis")),
+    )
 
     # Sequential: planner → literature search
     graph.set_entry_point("query_planner")

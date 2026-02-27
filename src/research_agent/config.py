@@ -148,5 +148,18 @@ class AgentConfig(BaseSettings):
         alias="ENABLE_CROSS_DOMAIN",
         description="Enable cross-domain concept bridging in concept explorer",
     )
+    node_timeouts: dict[str, int] = Field(
+        default_factory=lambda: {
+            "query_planner": 60,
+            "literature_search": 120,
+            "concept_explorer": 90,
+            "citation_analyzer": 90,
+            "assumption_auditor": 60,
+            "connection_explorer": 60,
+            "synthesis": 180,
+        },
+        alias="NODE_TIMEOUTS",
+        description="Per-node timeout in seconds (safety net above internal timeouts)",
+    )
 
     model_config = {"frozen": True, "populate_by_name": True}

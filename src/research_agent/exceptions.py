@@ -12,6 +12,7 @@ Hierarchy::
     +-- PlannerError          — query decomposition failed
     +-- SearchError           — literature search failed
     +-- SynthesisError        — report generation failed
+    +-- NodeTimeoutError      — pipeline node exceeded its time limit
 """
 
 from __future__ import annotations
@@ -53,3 +54,17 @@ class SearchError(ResearchAgentError):
 
 class SynthesisError(ResearchAgentError):
     """Report synthesis failed."""
+
+
+class NodeTimeoutError(ResearchAgentError):
+    """A pipeline node exceeded its time limit.
+
+    Attributes:
+        node_name: The graph node that timed out.
+        timeout_s: The timeout limit in seconds.
+    """
+
+    def __init__(self, node_name: str, timeout_s: int) -> None:
+        self.node_name = node_name
+        self.timeout_s = timeout_s
+        super().__init__(f"Node '{node_name}' timed out after {timeout_s}s")

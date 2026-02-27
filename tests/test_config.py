@@ -235,3 +235,35 @@ class TestAgentConfig:
         monkeypatch.setenv("ENABLE_CROSS_DOMAIN", "false")
         config = AgentConfig()
         assert config.enable_cross_domain is False
+
+    def test_node_timeouts_defaults(self) -> None:
+        """Default node_timeouts has entries for all pipeline nodes."""
+        config = AgentConfig()
+        expected_nodes = {
+            "query_planner",
+            "literature_search",
+            "concept_explorer",
+            "citation_analyzer",
+            "assumption_auditor",
+            "connection_explorer",
+            "synthesis",
+        }
+        assert set(config.node_timeouts.keys()) == expected_nodes
+        # All values are positive integers
+        assert all(v > 0 for v in config.node_timeouts.values())
+
+    def test_node_timeouts_override(self) -> None:
+        """Constructor override for node_timeouts."""
+        custom = {"query_planner": 10, "synthesis": 60}
+        config = AgentConfig(node_timeouts=custom)
+        assert config.node_timeouts == custom
+
+    def test_node_timeouts_env_var(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Loads from NODE_TIMEOUTS env var (JSON)."""
+        monkeypatch.setenv(
+            "NODE_TIMEOUTS",
+            '{"query_planner": 15, "synthesis": 30}',
+        )
+        config = AgentConfig()
+        assert config.node_timeouts["query_planner"] == 15
+        assert config.node_timeouts["synthesis"] == 30

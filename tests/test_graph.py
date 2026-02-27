@@ -15,9 +15,12 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from research_agent.config import AgentConfig, MCPConfig, ModelConfig
+from research_agent.exceptions import NodeTimeoutError, PlannerError
 from research_agent.graph import (
+    _CRITICAL_NODES,
     StreamEvent,
     _fetch_kb_context,
+    _make_resilient_node,
     _parse_domain_list,
     _parse_stats_summary,
     _passthrough,
@@ -512,3 +515,112 @@ class TestStreamResearch:
         # Last event should be complete
         assert events[-1].event_type == "complete"
         assert "chars" in events[-1].data
+
+
+class TestResilientNode:
+    """Tests for _make_resilient_node timeout and error handling."""
+
+    @pytest.mark.asyncio
+    async def test_successful_node_passes_through(self) -> None:
+        """Successful node returns its result unchanged."""
+        from research_agent.state import NodeUpdate
+
+        async def good_node(state: ResearchState) -> NodeUpdate:
+            return NodeUpdate(current_node="test", search_summary="ok")
+
+        wrapped = _make_resilient_node("concept_explorer", good_node, 5)
+        state = ResearchState(query="test")
+        result = await wrapped(state)
+        assert result["search_summary"] == "ok"
+        assert result["current_node"] == "test"
+
+    @pytest.mark.asyncio
+    async def test_noncritical_timeout_returns_empty(self) -> None:
+        """Non-critical node timeout returns empty NodeUpdate."""
+        import asyncio
+
+        from research_agent.state import NodeUpdate
+
+        async def slow_node(state: ResearchState) -> NodeUpdate:
+            await asyncio.sleep(10)
+            return NodeUpdate(current_node="never_reached")
+
+        wrapped = _make_resilient_node("concept_explorer", slow_node, 0)
+        state = ResearchState(query="test")
+        result = await wrapped(state)
+        assert result["current_node"] == "concept_explorer"
+
+    @pytest.mark.asyncio
+    async def test_critical_timeout_raises_node_timeout_error(self) -> None:
+        """Critical node timeout raises NodeTimeoutError."""
+        import asyncio
+
+        from research_agent.state import NodeUpdate
+
+        async def slow_node(state: ResearchState) -> NodeUpdate:
+            await asyncio.sleep(10)
+            return NodeUpdate(current_node="never_reached")
+
+        wrapped = _make_resilient_node("query_planner", slow_node, 0)
+        state = ResearchState(query="test")
+        with pytest.raises(NodeTimeoutError, match="query_planner"):
+            await wrapped(state)
+
+    @pytest.mark.asyncio
+    async def test_noncritical_error_returns_empty(self) -> None:
+        """Non-critical node error returns empty NodeUpdate."""
+        from research_agent.state import NodeUpdate
+
+        async def bad_node(state: ResearchState) -> NodeUpdate:
+            raise RuntimeError("boom")
+
+        wrapped = _make_resilient_node("citation_analyzer", bad_node, 5)
+        state = ResearchState(query="test")
+        result = await wrapped(state)
+        assert result["current_node"] == "citation_analyzer"
+
+    @pytest.mark.asyncio
+    async def test_critical_error_propagates(self) -> None:
+        """Critical node error propagates unchanged."""
+        from research_agent.state import NodeUpdate
+
+        async def bad_node(state: ResearchState) -> NodeUpdate:
+            raise PlannerError("decomposition failed")
+
+        wrapped = _make_resilient_node("query_planner", bad_node, 5)
+        state = ResearchState(query="test")
+        with pytest.raises(PlannerError, match="decomposition failed"):
+            await wrapped(state)
+
+    @pytest.mark.asyncio
+    async def test_synthesis_is_critical(self) -> None:
+        """Synthesis node propagates errors (critical)."""
+        from research_agent.exceptions import SynthesisError
+        from research_agent.state import NodeUpdate
+
+        async def bad_node(state: ResearchState) -> NodeUpdate:
+            raise SynthesisError("synthesis failed")
+
+        wrapped = _make_resilient_node("synthesis", bad_node, 5)
+        state = ResearchState(query="test")
+        with pytest.raises(SynthesisError):
+            await wrapped(state)
+
+    def test_critical_nodes_set(self) -> None:
+        """Verify _CRITICAL_NODES contains expected nodes."""
+        assert {
+            "query_planner",
+            "literature_search",
+            "synthesis",
+        } == _CRITICAL_NODES
+
+    @pytest.mark.asyncio
+    async def test_wrapper_preserves_function_name(self) -> None:
+        """Wrapped function has descriptive __name__."""
+        from research_agent.state import NodeUpdate
+
+        async def my_node(state: ResearchState) -> NodeUpdate:
+            return NodeUpdate(current_node="test")
+
+        wrapped = _make_resilient_node("concept_explorer", my_node, 5)
+        assert "concept_explorer" in wrapped.__name__
