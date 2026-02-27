@@ -177,6 +177,12 @@ def _build_evidence_context(state: ResearchState) -> str:
     # Evidence quality metadata -- helps LLM calibrate confidence
     meta_lines = ["## Evidence Quality Metadata"]
 
+    # KB corpus context (from pre-pipeline stats)
+    if state.kb_stats_summary:
+        meta_lines.append(f"- KB corpus: {state.kb_stats_summary}")
+    if state.kb_domains:
+        meta_lines.append(f"- KB domains: {', '.join(state.kb_domains)}")
+
     # Search coverage
     total_results = len(state.search_results)
     if total_results == 0:

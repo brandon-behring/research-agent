@@ -17,6 +17,9 @@ import pytest
 from research_agent.config import AgentConfig, MCPConfig, ModelConfig
 from research_agent.graph import (
     StreamEvent,
+    _fetch_kb_context,
+    _parse_domain_list,
+    _parse_stats_summary,
     _passthrough,
     _should_audit_assumptions,
     _summarize_update,
@@ -75,6 +78,97 @@ class TestConditionalRouting:
         """Handles empty sub_tasks list → connection_explorer."""
         state = ResearchState(query="test", sub_tasks=[])
         assert _should_audit_assumptions(state) == "connection_explorer"
+
+
+class TestParseDomainList:
+    """Tests for _parse_domain_list markdown parser."""
+
+    def test_parses_markdown_table(self) -> None:
+        """Extracts domain names from markdown table."""
+        raw = (
+            "## Available Domains\n\n"
+            "| Domain | Sources | Concepts |\n"
+            "|--------|---------|----------|\n"
+            "| causal_inference | 312 | 145 |\n"
+            "| time_series | 98 | 52 |\n"
+        )
+        assert _parse_domain_list(raw) == ["causal_inference", "time_series"]
+
+    def test_returns_empty_on_no_table(self) -> None:
+        """Returns empty list when no table found."""
+        assert _parse_domain_list("No table here") == []
+
+    def test_skips_header_row(self) -> None:
+        """Skips the 'Domain' header row."""
+        raw = "| Domain | Count |\n|---|---|\n| stats | 10 |\n"
+        assert _parse_domain_list(raw) == ["stats"]
+
+    def test_handles_empty_input(self) -> None:
+        """Handles empty string gracefully."""
+        assert _parse_domain_list("") == []
+
+
+class TestParseStatsSummary:
+    """Tests for _parse_stats_summary markdown parser."""
+
+    def test_parses_sources_and_chunks(self) -> None:
+        """Extracts sources and chunks from bullet list."""
+        raw = "## Knowledge Base Statistics\n\n- **Sources:** 495\n- **Chunks:** 226,432\n"
+        assert _parse_stats_summary(raw) == "495 sources, 226,432 chunks"
+
+    def test_partial_data_sources_only(self) -> None:
+        """Returns just sources when chunks missing."""
+        raw = "- **Sources:** 100\n"
+        assert _parse_stats_summary(raw) == "100 sources"
+
+    def test_empty_on_no_data(self) -> None:
+        """Returns empty string when no stats found."""
+        assert _parse_stats_summary("No stats here") == ""
+
+    def test_handles_empty_input(self) -> None:
+        """Handles empty string gracefully."""
+        assert _parse_stats_summary("") == ""
+
+
+class TestFetchKBContext:
+    """Tests for _fetch_kb_context pre-pipeline helper."""
+
+    @pytest.mark.asyncio
+    async def test_returns_domains_and_stats(self, mock_mcp: AsyncMock) -> None:
+        """Successfully fetches domains and stats from MCP."""
+        domains, stats = await _fetch_kb_context(mock_mcp)
+        assert "causal_inference" in domains
+        assert "time_series" in domains
+        assert "sources" in stats
+
+    @pytest.mark.asyncio
+    async def test_graceful_on_list_domains_failure(self, mock_mcp: AsyncMock) -> None:
+        """Returns empty domains when list_domains fails."""
+        from research_agent.exceptions import MCPToolError
+
+        mock_mcp.list_domains.side_effect = MCPToolError("list_domains", "timeout")
+        domains, stats = await _fetch_kb_context(mock_mcp)
+        assert domains == []
+        assert "sources" in stats  # stats still works
+
+    @pytest.mark.asyncio
+    async def test_graceful_on_stats_failure(self, mock_mcp: AsyncMock) -> None:
+        """Returns empty stats when stats fails."""
+        from research_agent.exceptions import MCPToolError
+
+        mock_mcp.stats.side_effect = MCPToolError("stats", "timeout")
+        domains, stats = await _fetch_kb_context(mock_mcp)
+        assert len(domains) > 0  # domains still works
+        assert stats == ""
+
+    @pytest.mark.asyncio
+    async def test_graceful_on_both_failures(self, mock_mcp: AsyncMock) -> None:
+        """Returns empty values when both calls fail."""
+        mock_mcp.list_domains.side_effect = RuntimeError("down")
+        mock_mcp.stats.side_effect = RuntimeError("down")
+        domains, stats = await _fetch_kb_context(mock_mcp)
+        assert domains == []
+        assert stats == ""
 
 
 class TestEndToEnd:

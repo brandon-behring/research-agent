@@ -16,6 +16,7 @@ from research_agent.nodes.assumption_auditor import assumption_auditor
 from research_agent.nodes.citation_analyzer import citation_analyzer
 from research_agent.nodes.concept_explorer import concept_explorer
 from research_agent.nodes.literature_search import literature_search
+from research_agent.nodes.query_planner import _build_system_prompt
 from research_agent.state import ResearchState, SearchResult, SubTask
 
 
@@ -618,3 +619,32 @@ class TestAssumptionAuditor:
 
         assert len(result["assumption_audits"]) == 1
         assert "failed" in result["assumption_audits"][0].raw_output.lower()
+
+
+class TestPlannerSystemPrompt:
+    """Tests for dynamic planner system prompt building."""
+
+    def test_includes_domains_when_available(self) -> None:
+        """Prompt includes KB domains when pre-pipeline populated them."""
+        state = ResearchState(
+            query="test",
+            kb_domains=["causal_inference", "time_series"],
+            kb_stats_summary="495 sources, 226K chunks",
+        )
+        prompt = _build_system_prompt(state)
+        assert "causal_inference" in prompt
+        assert "time_series" in prompt
+        assert "495 sources" in prompt
+
+    def test_falls_back_to_default_description(self) -> None:
+        """Prompt uses default KB description when no context available."""
+        state = ResearchState(query="test")
+        prompt = _build_system_prompt(state)
+        assert "causal inference" in prompt.lower()
+        assert "Available KB domains" not in prompt
+
+    def test_includes_stats_without_domains(self) -> None:
+        """Prompt includes stats even if domains list is empty."""
+        state = ResearchState(query="test", kb_stats_summary="100 sources, 50K chunks")
+        prompt = _build_system_prompt(state)
+        assert "100 sources" in prompt

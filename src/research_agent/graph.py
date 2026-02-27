@@ -22,6 +22,7 @@ Design decisions:
 from __future__ import annotations
 
 import logging
+import re
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass
 from typing import Any
@@ -30,7 +31,7 @@ from langgraph.graph import END, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
 from research_agent.config import AgentConfig
-from research_agent.exceptions import PlannerError
+from research_agent.exceptions import MCPToolError, PlannerError
 from research_agent.mcp_client import ResearchKBClient
 from research_agent.nodes.assumption_auditor import assumption_auditor
 from research_agent.nodes.citation_analyzer import citation_analyzer
@@ -62,6 +63,92 @@ def _should_audit_assumptions(state: ResearchState) -> str:
     if methods:
         return "assumption_auditor"
     return "connection_explorer"
+
+
+def _parse_domain_list(raw: str) -> list[str]:
+    """Extract domain IDs from list_domains markdown response.
+
+    Parses markdown tables with domain names in the first column.
+    Expected format::
+
+        | Domain | Sources | Concepts |
+        |--------|---------|----------|
+        | causal_inference | 312 | 145 |
+
+    Args:
+        raw: Markdown string from list_domains.
+
+    Returns:
+        List of domain ID strings (e.g., ['causal_inference', 'time_series']).
+    """
+    domains: list[str] = []
+    for line in raw.split("\n"):
+        line = line.strip()
+        if not line.startswith("|") or "---" in line:
+            continue
+        cells = [c.strip() for c in line.split("|")[1:-1]]
+        if cells and cells[0] and cells[0].lower() not in ("domain", ""):
+            domains.append(cells[0])
+    return domains
+
+
+def _parse_stats_summary(raw: str) -> str:
+    """Extract concise corpus summary from stats markdown response.
+
+    Looks for **Sources:** and **Chunks:** bullet lines and combines
+    them into a compact summary string.
+
+    Args:
+        raw: Markdown string from stats.
+
+    Returns:
+        Summary like '495 sources, 226,432 chunks' or empty string on failure.
+    """
+    sources = ""
+    chunks = ""
+    for line in raw.split("\n"):
+        m = re.search(r"\*\*Sources:\*\*\s*([\d,]+)", line)
+        if m:
+            sources = m.group(1)
+        m = re.search(r"\*\*Chunks:\*\*\s*([\d,]+)", line)
+        if m:
+            chunks = m.group(1)
+    parts = []
+    if sources:
+        parts.append(f"{sources} sources")
+    if chunks:
+        parts.append(f"{chunks} chunks")
+    return ", ".join(parts)
+
+
+async def _fetch_kb_context(mcp: ResearchKBClient) -> tuple[list[str], str]:
+    """Fetch domain list and corpus stats from KB (pre-pipeline).
+
+    Both calls are lightweight (~100ms total, no LLM). Failures are
+    gracefully handled — the pipeline runs fine without this context.
+
+    Args:
+        mcp: Connected MCP client.
+
+    Returns:
+        Tuple of (domain list, stats summary string).
+    """
+    kb_domains: list[str] = []
+    kb_stats_summary: str = ""
+
+    try:
+        domains_raw = await mcp.list_domains()
+        kb_domains = _parse_domain_list(domains_raw)
+    except (MCPToolError, RuntimeError) as e:
+        logger.warning("list_domains failed (non-fatal): %s", e)
+
+    try:
+        stats_raw = await mcp.stats()
+        kb_stats_summary = _parse_stats_summary(stats_raw)
+    except (MCPToolError, RuntimeError) as e:
+        logger.warning("stats failed (non-fatal): %s", e)
+
+    return kb_domains, kb_stats_summary
 
 
 def _passthrough(state: ResearchState) -> NodeUpdate:
@@ -170,8 +257,16 @@ async def run_research(query: str, config: AgentConfig | None = None) -> dict[st
     logger.info("Starting research agent for: %s", query)
 
     async with ResearchKBClient(config.mcp) as mcp:
+        # Pre-pipeline: fetch KB context (lightweight, no LLM)
+        kb_domains, kb_stats_summary = await _fetch_kb_context(mcp)
+        logger.info("KB context: %d domains, stats='%s'", len(kb_domains), kb_stats_summary)
+
         graph = build_graph(config, mcp)
-        initial_state = ResearchState(query=query)
+        initial_state = ResearchState(
+            query=query,
+            kb_domains=kb_domains,
+            kb_stats_summary=kb_stats_summary,
+        )
         final_state = await graph.ainvoke(
             initial_state,
             config={
@@ -254,8 +349,16 @@ async def stream_research(
     logger.info("Starting streaming research agent for: %s", query)
 
     async with ResearchKBClient(config.mcp) as mcp:
+        # Pre-pipeline: fetch KB context (lightweight, no LLM)
+        kb_domains, kb_stats_summary = await _fetch_kb_context(mcp)
+        logger.info("KB context: %d domains, stats='%s'", len(kb_domains), kb_stats_summary)
+
         graph = build_graph(config, mcp)
-        initial_state = ResearchState(query=query)
+        initial_state = ResearchState(
+            query=query,
+            kb_domains=kb_domains,
+            kb_stats_summary=kb_stats_summary,
+        )
 
         run_config: dict[str, Any] = {
             "run_name": "research_agent_stream",
