@@ -17,7 +17,10 @@ from research_agent.nodes.citation_analyzer import (
     _parse_source_detail,
     citation_analyzer,
 )
-from research_agent.nodes.concept_explorer import concept_explorer
+from research_agent.nodes.concept_explorer import (
+    _parse_similar_concepts,
+    concept_explorer,
+)
 from research_agent.nodes.literature_search import literature_search
 from research_agent.nodes.query_planner import _build_system_prompt
 from research_agent.state import ResearchState, SearchResult, SubTask
@@ -376,6 +379,101 @@ class TestConceptExplorer:
         # "Unconfoundedness" appears in both neighborhoods but should be deduped
         names_lower = [m.lower() for m in result["discovered_methods"]]
         assert names_lower.count("unconfoundedness") == 1
+
+    @pytest.mark.asyncio
+    async def test_collects_similar_concepts(
+        self, test_config: AgentConfig, mock_mcp: ResearchKBClient
+    ) -> None:
+        """Collects similar concepts from find_similar_concepts calls."""
+        state = ResearchState(
+            query="test",
+            sub_tasks=[
+                SubTask(description="t", concepts_to_explore=["double machine learning"]),
+            ],
+        )
+        result = await concept_explorer(state, test_config, mock_mcp)
+        assert "similar_concepts" in result
+        assert len(result["similar_concepts"]) > 0
+        mock_mcp.find_similar_concepts.assert_awaited()
+
+    @pytest.mark.asyncio
+    async def test_similar_concepts_graceful_on_failure(
+        self, test_config: AgentConfig, mock_mcp: ResearchKBClient
+    ) -> None:
+        """find_similar_concepts failure doesn't block concept exploration."""
+        mock_mcp.find_similar_concepts.side_effect = RuntimeError("not found")
+        state = ResearchState(
+            query="test",
+            sub_tasks=[
+                SubTask(description="t", concepts_to_explore=["double machine learning"]),
+            ],
+        )
+        result = await concept_explorer(state, test_config, mock_mcp)
+        assert len(result["concepts"]) == 1  # Main exploration still works
+        assert result["similar_concepts"] == []
+
+    @pytest.mark.asyncio
+    async def test_similar_concepts_deduplicates(
+        self, test_config: AgentConfig, mock_mcp: ResearchKBClient
+    ) -> None:
+        """Duplicate similar concepts across explorations are deduplicated."""
+        state = ResearchState(
+            query="test",
+            sub_tasks=[
+                SubTask(description="t", concepts_to_explore=["DML", "cross-fitting"]),
+            ],
+        )
+        result = await concept_explorer(state, test_config, mock_mcp)
+        # Same similar concepts returned for both — should be deduped
+        names = [sc["name"] for sc in result["similar_concepts"]]
+        assert len(names) == len(set(n.lower() for n in names))
+
+    @pytest.mark.asyncio
+    async def test_similar_concepts_capped_by_config(self, mock_mcp: ResearchKBClient) -> None:
+        """similar_concepts list respects max_similar_concepts config."""
+        from research_agent.config import AgentConfig, MCPConfig, ModelConfig
+
+        config = AgentConfig(
+            models=ModelConfig(planning="test", synthesis="test"),
+            mcp=MCPConfig(transport="stdio", research_kb_path="/fake"),
+            max_concepts=3,
+            max_similar_concepts=2,  # Low cap
+        )
+        state = ResearchState(
+            query="test",
+            sub_tasks=[
+                SubTask(description="t", concepts_to_explore=["DML"]),
+            ],
+        )
+        result = await concept_explorer(state, config, mock_mcp)
+        assert len(result["similar_concepts"]) <= 2
+
+
+class TestParseSimilarConcepts:
+    """Tests for _parse_similar_concepts markdown parser."""
+
+    def test_parses_markdown_table(self) -> None:
+        """Extracts concepts from markdown table."""
+        raw = (
+            "## Similar Concepts\n\n"
+            "| Concept | Similarity | Type |\n"
+            "|---------|-----------|------|\n"
+            "| TMLE | 0.87 | METHOD |\n"
+            "| Cross-fitting | 0.85 | METHOD |\n"
+        )
+        result = _parse_similar_concepts(raw)
+        assert len(result) == 2
+        assert result[0]["name"] == "TMLE"
+        assert result[0]["similarity"] == 0.87
+        assert result[0]["concept_type"] == "METHOD"
+
+    def test_returns_empty_on_no_table(self) -> None:
+        """Returns empty list when no table found."""
+        assert _parse_similar_concepts("No table here") == []
+
+    def test_handles_empty_input(self) -> None:
+        """Handles empty string."""
+        assert _parse_similar_concepts("") == []
 
 
 class TestCitationAnalyzer:

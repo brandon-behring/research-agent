@@ -202,12 +202,50 @@ def _build_neighborhood_summary(data: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def _parse_similar_concepts(raw: str) -> list[dict[str, Any]]:
+    """Parse find_similar_concepts markdown response.
+
+    Expected format::
+
+        ## Similar Concepts to X
+        | Concept | Similarity | Type |
+        |---------|-----------|------|
+        | Concept A | 0.95 | METHOD |
+
+    Args:
+        raw: Markdown string from research_kb_find_similar_concepts.
+
+    Returns:
+        List of dicts with name, similarity, concept_type keys.
+    """
+    results: list[dict[str, Any]] = []
+    for line in raw.split("\n"):
+        line = line.strip()
+        if not line.startswith("|") or "---" in line:
+            continue
+        cells = [c.strip() for c in line.split("|")[1:-1]]
+        if len(cells) >= 2 and cells[0].lower() not in ("concept", ""):
+            try:
+                similarity = float(cells[1])
+            except (ValueError, IndexError):
+                continue
+            entry: dict[str, Any] = {
+                "name": cells[0],
+                "similarity": similarity,
+            }
+            if len(cells) >= 3:
+                entry["concept_type"] = cells[2]
+            results.append(entry)
+    return results
+
+
 @dataclass
 class _ExploreResult:
     """Internal result from _explore_one, carrying concept + discovered neighbors."""
 
     concept: ConceptInfo
     assumption_neighbors: list[str]  # ASSUMPTION/THEOREM names from neighborhood
+    similar: list[dict[str, Any]]  # Embedding-similar concepts
 
 
 async def _explore_one(
@@ -269,6 +307,18 @@ async def _explore_one(
                     exc,
                 )
 
+        # Find embedding-similar concepts (optional enrichment)
+        similar: list[dict[str, Any]] = []
+        if concept_id:
+            try:
+                similar_raw = await mcp.find_similar_concepts(concept_id, limit=5, threshold=0.8)
+                similar = _parse_similar_concepts(similar_raw)
+                # Tag each with source concept for dedup tracking
+                for s in similar:
+                    s["source_concept"] = detail.name if detail and detail.name else name
+            except (MCPToolError, RuntimeError) as exc:
+                logger.debug("find_similar_concepts failed for '%s': %s (optional)", name, exc)
+
         concept = ConceptInfo(
             concept_id=concept_id,
             name=detail.name if detail and detail.name else name,
@@ -277,7 +327,11 @@ async def _explore_one(
             relationships=detail.relationships if detail else [],
             neighborhood_summary=neighborhood_summary,
         )
-        return _ExploreResult(concept=concept, assumption_neighbors=assumption_neighbors)
+        return _ExploreResult(
+            concept=concept,
+            assumption_neighbors=assumption_neighbors,
+            similar=similar,
+        )
     except (MCPToolError, RuntimeError) as e:
         logger.warning("Failed to explore concept '%s': %s", name, e)
         return None
@@ -324,6 +378,8 @@ async def concept_explorer(
     concepts: list[ConceptInfo] = []
     discovered_methods: list[str] = []
     seen_discovered: set[str] = set()
+    all_similar: list[dict[str, Any]] = []
+    seen_similar: set[str] = set()
 
     try:
         async with asyncio.timeout(_EXPLORATION_TIMEOUT_SECONDS):
@@ -346,19 +402,31 @@ async def concept_explorer(
                             seen_discovered.add(name_lower)
                             discovered_methods.append(neighbor_name)
                             logger.info("Auto-discovered method from graph: %s", neighbor_name)
+                    # Collect similar concepts (deduplicate by name)
+                    for sim in r.similar:
+                        sim_name = sim.get("name", "").lower()
+                        if sim_name and sim_name not in seen_similar:
+                            seen_similar.add(sim_name)
+                            all_similar.append(sim)
 
     except TimeoutError:
         logger.warning("Concept exploration timed out with %d concepts", len(concepts))
+
+    # Cap similar concepts to config limit
+    similar_concepts = all_similar[: config.max_similar_concepts]
 
     summary = f"Explored {len(unique_names)} concepts, found {len(concepts)} total entries."
     if discovered_methods:
         methods_str = ", ".join(discovered_methods)
         summary += f" Auto-discovered {len(discovered_methods)} methods: {methods_str}."
+    if similar_concepts:
+        summary += f" Found {len(similar_concepts)} similar concepts."
     logger.info(summary)
 
     return NodeUpdate(
         concepts=concepts,
         concept_map_summary=summary,
         discovered_methods=discovered_methods,
+        similar_concepts=similar_concepts,
         current_node="concept_explorer",
     )

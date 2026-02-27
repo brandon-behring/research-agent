@@ -266,6 +266,31 @@ class TestConceptualConnections:
         assert "X → Y" in ctx
 
 
+class TestSimilarConceptsSection:
+    """Tests for similar concepts in evidence context."""
+
+    def test_includes_similar_concepts(self) -> None:
+        """Similar concepts section appears when populated."""
+        state = ResearchState(
+            query="test",
+            planning_rationale="plan",
+            similar_concepts=[
+                {"name": "TMLE", "similarity": 0.87, "source_concept": "DML"},
+                {"name": "Cross-fitting", "similarity": 0.85, "source_concept": "DML"},
+            ],
+        )
+        ctx = _build_evidence_context(state)
+        assert "Embedding-Similar Concepts (2)" in ctx
+        assert "TMLE" in ctx
+        assert "87%" in ctx
+
+    def test_omits_similar_concepts_when_empty(self) -> None:
+        """No similar concepts section when list is empty."""
+        state = ResearchState(query="test", planning_rationale="plan")
+        ctx = _build_evidence_context(state)
+        assert "Embedding-Similar" not in ctx
+
+
 class TestSourceDetailsSection:
     """Tests for source details in evidence context."""
 

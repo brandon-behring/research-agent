@@ -130,6 +130,23 @@ def _build_evidence_context(state: ResearchState) -> str:
                 concept_lines.append(f"\n### {c.name} ({c.concept_type})\n{c.description}")
         sections.append("\n".join(concept_lines))
 
+    # Similar concepts (embedding-based discovery)
+    if state.similar_concepts:
+        sim_lines = [f"### Embedding-Similar Concepts ({len(state.similar_concepts)})"]
+        for sc in state.similar_concepts:
+            source = sc.get("source_concept", "?")
+            similarity = sc.get("similarity", 0)
+            ctype = sc.get("concept_type", "")
+            type_str = f" [{ctype}]" if ctype else ""
+            sim_lines.append(
+                f"- {sc.get('name', '?')} ({similarity:.0%} similar to {source}){type_str}"
+            )
+        # Append to concepts section if it exists, otherwise standalone
+        if state.concepts:
+            sections[-1] += "\n\n" + "\n".join(sim_lines)
+        else:
+            sections.append("\n".join(sim_lines))
+
     # Citations
     if state.citations:
         cite_lines = [f"## Citation Networks ({len(state.citations)} sources analyzed)"]
