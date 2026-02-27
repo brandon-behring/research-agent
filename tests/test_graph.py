@@ -54,13 +54,13 @@ class TestConditionalRouting:
         )
         assert _should_audit_assumptions(state) == "assumption_auditor"
 
-    def test_routes_to_synthesis_when_no_methods(self) -> None:
-        """Skips assumption_auditor when no methods identified."""
+    def test_routes_to_connection_explorer_when_no_methods(self) -> None:
+        """Skips assumption_auditor → goes to connection_explorer when no methods."""
         state = ResearchState(
             query="test",
             sub_tasks=[SubTask(description="t", methods_to_audit=[])],
         )
-        assert _should_audit_assumptions(state) == "synthesis"
+        assert _should_audit_assumptions(state) == "connection_explorer"
 
     def test_routes_to_auditor_when_discovered_methods_present(self) -> None:
         """Routes to assumption_auditor when discovered_methods exist."""
@@ -71,10 +71,10 @@ class TestConditionalRouting:
         )
         assert _should_audit_assumptions(state) == "assumption_auditor"
 
-    def test_routes_to_synthesis_with_empty_subtasks(self) -> None:
-        """Handles empty sub_tasks list."""
+    def test_routes_to_connection_explorer_with_empty_subtasks(self) -> None:
+        """Handles empty sub_tasks list → connection_explorer."""
         state = ResearchState(query="test", sub_tasks=[])
-        assert _should_audit_assumptions(state) == "synthesis"
+        assert _should_audit_assumptions(state) == "connection_explorer"
 
 
 class TestEndToEnd:

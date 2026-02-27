@@ -158,6 +158,22 @@ def _build_evidence_context(state: ResearchState) -> str:
             audit_lines.append(f"\n### {a.method_name}\n{a.raw_output}")
         sections.append("\n".join(audit_lines))
 
+    # Conceptual connections
+    if state.connection_explanations:
+        conn_lines = [f"## Conceptual Connections ({len(state.connection_explanations)})"]
+        for conn in state.connection_explanations:
+            conn_lines.append(f"\n### {conn['concept_a']} → {conn['concept_b']}")
+            path_len = conn.get("path_length", 0)
+            explanation = conn.get("path_explanation", "")
+            conn_lines.append(f"Path ({path_len} hops): {explanation}")
+            for step in conn.get("path", []):
+                evidence = step.get("evidence", [])
+                ev_str = f" ({len(evidence)} evidence chunks)" if evidence else ""
+                conn_lines.append(
+                    f"- {step.get('concept_name', '?')} [{step.get('concept_type', '')}]{ev_str}"
+                )
+        sections.append("\n".join(conn_lines))
+
     # Evidence quality metadata -- helps LLM calibrate confidence
     meta_lines = ["## Evidence Quality Metadata"]
 

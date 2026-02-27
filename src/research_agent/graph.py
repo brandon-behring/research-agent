@@ -35,6 +35,7 @@ from research_agent.mcp_client import ResearchKBClient
 from research_agent.nodes.assumption_auditor import assumption_auditor
 from research_agent.nodes.citation_analyzer import citation_analyzer
 from research_agent.nodes.concept_explorer import concept_explorer
+from research_agent.nodes.connection_explorer import connection_explorer
 from research_agent.nodes.literature_search import literature_search
 from research_agent.nodes.query_planner import query_planner
 from research_agent.nodes.synthesis import synthesis_writer
@@ -50,17 +51,17 @@ def _should_audit_assumptions(state: ResearchState) -> str:
     from concept_explorer's graph traversal.
 
     Args:
-        state: Current state after concept exploration.
+        state: Current state after analysis join.
 
     Returns:
-        'assumption_auditor' if methods exist, 'synthesis' otherwise.
+        'assumption_auditor' if methods exist, 'connection_explorer' otherwise.
     """
     methods = [m for task in state.sub_tasks for m in task.methods_to_audit]
     methods.extend(state.discovered_methods)
 
     if methods:
         return "assumption_auditor"
-    return "synthesis"
+    return "connection_explorer"
 
 
 def _passthrough(state: ResearchState) -> NodeUpdate:
@@ -103,6 +104,9 @@ def build_graph(config: AgentConfig, mcp: ResearchKBClient) -> CompiledStateGrap
     async def _assumption_auditor(state: ResearchState) -> NodeUpdate:
         return await assumption_auditor(state, config, mcp)
 
+    async def _connection_explorer(state: ResearchState) -> NodeUpdate:
+        return await connection_explorer(state, config, mcp)
+
     async def _synthesis_writer(state: ResearchState) -> NodeUpdate:
         return await synthesis_writer(state, config)
 
@@ -116,6 +120,7 @@ def build_graph(config: AgentConfig, mcp: ResearchKBClient) -> CompiledStateGrap
     graph.add_node("citation_analyzer", _citation_analyzer)
     graph.add_node("analysis_join", _passthrough)
     graph.add_node("assumption_auditor", _assumption_auditor)
+    graph.add_node("connection_explorer", _connection_explorer)
     graph.add_node("synthesis", _synthesis_writer)
 
     # Sequential: planner → literature search
@@ -130,16 +135,17 @@ def build_graph(config: AgentConfig, mcp: ResearchKBClient) -> CompiledStateGrap
     graph.add_edge("concept_explorer", "analysis_join")
     graph.add_edge("citation_analyzer", "analysis_join")
 
-    # Conditional: analysis_join → assumption_auditor OR synthesis
+    # Conditional: analysis_join → assumption_auditor OR connection_explorer
     graph.add_conditional_edges(
         "analysis_join",
         _should_audit_assumptions,
         {
             "assumption_auditor": "assumption_auditor",
-            "synthesis": "synthesis",
+            "connection_explorer": "connection_explorer",
         },
     )
-    graph.add_edge("assumption_auditor", "synthesis")
+    graph.add_edge("assumption_auditor", "connection_explorer")
+    graph.add_edge("connection_explorer", "synthesis")
     graph.add_edge("synthesis", END)
 
     return graph.compile()
@@ -214,6 +220,9 @@ def _summarize_update(node_name: str, update: dict[str, Any]) -> str:
         "citation_analyzer": f"Analyzed {len(update.get('citations', []))} citation chains",
         "analysis_join": "Analysis complete (parallel join)",
         "assumption_auditor": f"Audited {len(update.get('assumption_audits', []))} methods",
+        "connection_explorer": (
+            f"Traced {len(update.get('connection_explanations', []))} concept connections"
+        ),
         "synthesis": f"Generated report ({len(update.get('report', ''))} chars)",
     }
     return summaries.get(node_name, f"Completed {node_name}")

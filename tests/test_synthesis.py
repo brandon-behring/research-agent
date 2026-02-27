@@ -194,3 +194,73 @@ class TestEvidenceQualityMetadata:
         state = ResearchState(query="test", planning_rationale="plan")
         ctx = _build_evidence_context(state)
         assert "Assumptions:" not in ctx
+
+
+class TestConceptualConnections:
+    """Tests for the Conceptual Connections section in evidence context."""
+
+    def test_includes_connections_when_present(self) -> None:
+        """Conceptual Connections section included when explanations exist."""
+        state = ResearchState(
+            query="test",
+            planning_rationale="plan",
+            connection_explanations=[
+                {
+                    "concept_a": "DML",
+                    "concept_b": "cross-fitting",
+                    "path_length": 1,
+                    "path_explanation": "DML directly uses cross-fitting.",
+                    "path": [
+                        {
+                            "concept_name": "DML",
+                            "concept_type": "METHOD",
+                            "evidence": [{"text": "...", "source": "..."}],
+                        },
+                        {
+                            "concept_name": "cross-fitting",
+                            "concept_type": "METHOD",
+                            "evidence": [],
+                        },
+                    ],
+                }
+            ],
+        )
+        ctx = _build_evidence_context(state)
+        assert "Conceptual Connections (1)" in ctx
+        assert "DML → cross-fitting" in ctx
+        assert "1 hops" in ctx
+        assert "DML [METHOD] (1 evidence chunks)" in ctx
+        assert "cross-fitting [METHOD]" in ctx
+
+    def test_omits_connections_when_empty(self) -> None:
+        """No Conceptual Connections section when list is empty."""
+        state = ResearchState(query="test", planning_rationale="plan")
+        ctx = _build_evidence_context(state)
+        assert "Conceptual Connections" not in ctx
+
+    def test_multiple_connections(self) -> None:
+        """Multiple connections all rendered."""
+        state = ResearchState(
+            query="test",
+            planning_rationale="plan",
+            connection_explanations=[
+                {
+                    "concept_a": "A",
+                    "concept_b": "B",
+                    "path_length": 2,
+                    "path_explanation": "A connects to B via C.",
+                    "path": [],
+                },
+                {
+                    "concept_a": "X",
+                    "concept_b": "Y",
+                    "path_length": 1,
+                    "path_explanation": "X relates to Y.",
+                    "path": [],
+                },
+            ],
+        )
+        ctx = _build_evidence_context(state)
+        assert "Conceptual Connections (2)" in ctx
+        assert "A → B" in ctx
+        assert "X → Y" in ctx
