@@ -481,3 +481,57 @@ class TestJSONOutput:
         assert output["metadata"]["connection_count"] == 1
         assert "max_search_results" in output["config"]
         assert "planning_model" in output["config"]
+
+
+class TestErrorFormatting:
+    """Tests for _format_error actionable hints."""
+
+    def test_mcp_connection_error_hint(self) -> None:
+        """MCPConnectionError includes connection hints."""
+        from research_agent.cli import _format_error
+        from research_agent.exceptions import MCPConnectionError
+
+        err = MCPConnectionError("connection refused")
+        msg = _format_error(err)
+        assert "RESEARCH_KB_PATH" in msg
+        assert "health-check" in msg
+
+    def test_search_error_no_results_hint(self) -> None:
+        """SearchError with 'no results' includes search hints."""
+        from research_agent.cli import _format_error
+        from research_agent.exceptions import SearchError
+
+        err = SearchError("Literature search timed out with no results")
+        msg = _format_error(err)
+        assert "broader search terms" in msg
+
+    def test_node_timeout_error_hint(self) -> None:
+        """NodeTimeoutError includes timeout hints."""
+        from research_agent.cli import _format_error
+        from research_agent.exceptions import NodeTimeoutError
+
+        err = NodeTimeoutError("synthesis", 180)
+        msg = _format_error(err)
+        assert "synthesis" in msg
+        assert "180s" in msg
+        assert "NODE_TIMEOUTS" in msg
+
+    def test_generic_error_no_hint(self) -> None:
+        """Generic exception has no special hint."""
+        from research_agent.cli import _format_error
+
+        err = ValueError("something broke")
+        msg = _format_error(err)
+        assert "something broke" in msg
+        assert "Hint:" not in msg
+
+    def test_verbose_includes_traceback(self) -> None:
+        """verbose=True appends traceback info."""
+        from research_agent.cli import _format_error
+
+        try:
+            raise ValueError("test error")
+        except ValueError as e:
+            msg = _format_error(e, verbose=True)
+        assert "Traceback" in msg
+        assert "test error" in msg

@@ -19,7 +19,12 @@ from typing import Any
 
 from research_agent.cache import ReportCache, compute_cache_key
 from research_agent.config import AgentConfig
-from research_agent.exceptions import ResearchAgentError
+from research_agent.exceptions import (
+    MCPConnectionError,
+    NodeTimeoutError,
+    ResearchAgentError,
+    SearchError,
+)
 from research_agent.graph import run_research, stream_research
 from research_agent.mcp_client import ResearchKBClient
 
@@ -81,6 +86,51 @@ def _build_json_output(result: dict[str, Any], config: AgentConfig) -> dict[str,
         "metadata": metadata,
         "config": config_summary,
     }
+
+
+def _format_error(error: Exception, verbose: bool = False) -> str:
+    """Format an error with actionable hints.
+
+    Maps known error types to user-friendly messages with suggestions
+    for resolution. Falls back to the raw error message for unknown types.
+
+    Args:
+        error: The exception to format.
+        verbose: If True, append full traceback.
+
+    Returns:
+        Formatted error string for stderr.
+    """
+    import traceback
+
+    msg = f"Error: {error}"
+
+    if isinstance(error, MCPConnectionError):
+        msg += (
+            "\n\nHint: Check your MCP connection settings:"
+            "\n  - For stdio: export RESEARCH_KB_PATH=/path/to/research-kb"
+            "\n  - For HTTP:  export RESEARCH_KB_URL=http://localhost:8000"
+            "\n  - Run: research-agent --health-check"
+        )
+    elif isinstance(error, SearchError) and "no results" in str(error).lower():
+        msg += (
+            "\n\nHint: The knowledge base returned no results."
+            "\n  - Try broader search terms"
+            "\n  - Check KB coverage: research-agent --health-check"
+            "\n  - Verify the KB has been populated with relevant sources"
+        )
+    elif isinstance(error, NodeTimeoutError):
+        msg += (
+            f"\n\nHint: Node '{error.node_name}' exceeded {error.timeout_s}s."
+            "\n  - The MCP server may be slow or unresponsive"
+            "\n  - Increase timeout: export NODE_TIMEOUTS='{...}'"
+            "\n  - Check server health: research-agent --health-check"
+        )
+
+    if verbose:
+        msg += "\n\n" + traceback.format_exc()
+
+    return msg
 
 
 def _output_report(report: str, args: argparse.Namespace) -> None:
@@ -297,13 +347,13 @@ def main() -> None:
             else:
                 result = asyncio.run(run_research(args.query, config))
         except ResearchAgentError as e:
-            print(f"Error: {e}", file=sys.stderr)
+            print(_format_error(e, verbose=args.verbose), file=sys.stderr)
             sys.exit(1)
         except KeyboardInterrupt:
             print("\nInterrupted.", file=sys.stderr)
             sys.exit(130)
         except Exception as e:
-            print(f"Unexpected error: {e}", file=sys.stderr)
+            print(_format_error(e, verbose=args.verbose), file=sys.stderr)
             sys.exit(2)
 
         report = result.get("report", "No report generated.")
