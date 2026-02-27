@@ -45,6 +45,44 @@ def _extract_metadata(result: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _build_json_output(result: dict[str, Any], config: AgentConfig) -> dict[str, Any]:
+    """Build structured JSON output from pipeline result.
+
+    Assembles report, metadata, and configuration into a single JSON-serializable
+    dict for machine-readable output (``--json`` flag).
+
+    Args:
+        result: Final state dict from run_research().
+        config: Agent configuration used for this run.
+
+    Returns:
+        Dict with report, metadata, and config keys.
+    """
+    metadata = _extract_metadata(result)
+    metadata["concept_count"] = len(result.get("concepts", []))
+    metadata["citation_count"] = len(result.get("citations", []))
+    metadata["confidence_level"] = result.get("confidence_assessment", "")
+    metadata["kb_stats"] = result.get("kb_stats_summary", "")
+    metadata["kb_domains"] = result.get("kb_domains", [])
+    metadata["similar_concepts_count"] = len(result.get("similar_concepts", []))
+    metadata["cross_domain_matches_count"] = len(result.get("cross_domain_matches", []))
+    metadata["connection_count"] = len(result.get("connection_explanations", []))
+
+    config_summary = {
+        "max_search_results": config.max_search_results,
+        "max_concepts": config.max_concepts,
+        "max_citations": config.max_citations,
+        "synthesis_model": config.models.synthesis,
+        "planning_model": config.models.planning,
+    }
+
+    return {
+        "report": result.get("report", ""),
+        "metadata": metadata,
+        "config": config_summary,
+    }
+
+
 def _output_report(report: str, args: argparse.Namespace) -> None:
     """Write report to file or stdout.
 
@@ -194,6 +232,11 @@ def main() -> None:
         action="store_true",
         help="Check MCP connection and exit (no query required)",
     )
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output structured JSON instead of markdown report",
+    )
 
     args = parser.parse_args()
 
@@ -282,7 +325,17 @@ def main() -> None:
         )
         cache.evict_expired()
 
-    _output_report(report, args)
+    if args.json:
+        json_output = _build_json_output(result, config)
+        output_str = json.dumps(json_output, indent=2)
+        if args.output:
+            with open(args.output, "w") as f:
+                f.write(output_str)
+            print(f"JSON report written to {args.output}", file=sys.stderr)
+        else:
+            print(output_str)
+    else:
+        _output_report(report, args)
 
 
 if __name__ == "__main__":

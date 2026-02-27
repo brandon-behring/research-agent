@@ -358,3 +358,126 @@ class TestRunStreaming:
             result = await _run_streaming("test query", config)
 
         assert result["report"] == "# Final Report"
+
+
+class TestJSONOutput:
+    """Tests for --json structured output."""
+
+    def test_json_flag_accepted(self) -> None:
+        """--json is a recognized flag."""
+        result = subprocess.run(
+            [sys.executable, "-m", "research_agent.cli", "--help"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        assert "--json" in result.stdout
+
+    def test_json_output_is_valid_json(self) -> None:
+        """--json produces valid JSON output."""
+        import json
+
+        mock_result = {
+            "report": "# Test Report",
+            "search_results": [],
+            "concepts": [],
+            "assumption_audits": [],
+            "citations": [],
+            "confidence_assessment": "high",
+            "kb_stats_summary": "100 sources",
+            "kb_domains": ["causal_inference"],
+            "similar_concepts": [],
+            "cross_domain_matches": [],
+            "connection_explanations": [],
+        }
+        with (
+            patch(
+                "research_agent.cli.run_research",
+                new_callable=AsyncMock,
+            ) as mock_run,
+            patch(
+                "sys.argv",
+                ["cli", "--no-cache", "--json", "What is DML?"],
+            ),
+            patch("sys.stdout", new_callable=StringIO) as mock_stdout,
+        ):
+            mock_run.return_value = mock_result
+            main()
+            output = mock_stdout.getvalue()
+
+        parsed = json.loads(output)
+        assert parsed["report"] == "# Test Report"
+        assert "metadata" in parsed
+        assert "config" in parsed
+        assert parsed["metadata"]["source_count"] == 0
+        assert parsed["metadata"]["confidence_level"] == "high"
+        assert parsed["metadata"]["kb_domains"] == ["causal_inference"]
+
+    def test_json_output_to_file(self, tmp_path: pytest.TempPathFactory) -> None:
+        """--json --output writes JSON to file."""
+        import json
+
+        out_file = tmp_path / "report.json"  # type: ignore[operator]
+        mock_result = {
+            "report": "# File Report",
+            "search_results": [],
+            "concepts": [],
+            "assumption_audits": [],
+            "citations": [],
+        }
+        with (
+            patch(
+                "research_agent.cli.run_research",
+                new_callable=AsyncMock,
+            ) as mock_run,
+            patch(
+                "sys.argv",
+                [
+                    "cli",
+                    "--no-cache",
+                    "--json",
+                    "--output",
+                    str(out_file),
+                    "What is DML?",
+                ],
+            ),
+        ):
+            mock_run.return_value = mock_result
+            main()
+        parsed = json.loads(out_file.read_text())
+        assert parsed["report"] == "# File Report"
+
+    def test_build_json_output_structure(self) -> None:
+        """_build_json_output returns complete structure."""
+        from research_agent.cli import _build_json_output
+        from research_agent.config import AgentConfig
+
+        result = {
+            "report": "# Report",
+            "search_results": [1, 2, 3],
+            "concepts": [type("C", (), {"name": "DML"})()],
+            "citations": [1, 2],
+            "assumption_audits": [
+                type("A", (), {"method_name": "IV"})(),
+            ],
+            "confidence_assessment": "medium",
+            "kb_stats_summary": "500 sources",
+            "kb_domains": ["stats", "econ"],
+            "similar_concepts": [{"name": "X"}],
+            "cross_domain_matches": [],
+            "connection_explanations": [{"path": "A→B"}],
+        }
+        config = AgentConfig()
+        output = _build_json_output(result, config)
+
+        assert output["report"] == "# Report"
+        assert output["metadata"]["source_count"] == 3
+        assert output["metadata"]["concept_count"] == 1
+        assert output["metadata"]["citation_count"] == 2
+        assert output["metadata"]["methods_audited"] == ["IV"]
+        assert output["metadata"]["confidence_level"] == "medium"
+        assert output["metadata"]["kb_stats"] == "500 sources"
+        assert output["metadata"]["similar_concepts_count"] == 1
+        assert output["metadata"]["connection_count"] == 1
+        assert "max_search_results" in output["config"]
+        assert "planning_model" in output["config"]
