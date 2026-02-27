@@ -1,17 +1,20 @@
 """LangGraph StateGraph -- orchestrates the multi-agent research pipeline.
 
 Architecture:
-    Query Planner -> Literature Search -> Concept Explorer -> Citation Analyzer
-                                                            -> Assumption Auditor
-                 -> Synthesis Writer
+    query_planner → literature_search
+                  → {concept_explorer, citation_analyzer}  (parallel fan-out)
+                  → analysis_join  (sync barrier)
+                  → [assumption_auditor]  (conditional)
+                  → synthesis
 
-    The graph uses conditional edges to:
-    1. Skip assumption auditing if no methods were identified
-    2. Route to synthesis after all analysis nodes complete
+    The graph uses:
+    1. LangGraph native fan-out for concept_explorer + citation_analyzer
+    2. A no-op join barrier (analysis_join) for state merging
+    3. Conditional routing to skip assumption auditing if no methods exist
 
 Design decisions:
     - Pydantic BaseModel state for rich validation and type support
-    - Sequential main pipeline with potential parallel analysis
+    - Parallel analysis via LangGraph fan-out (not asyncio.gather in a node)
     - Conditional routing avoids unnecessary MCP calls
     - Config and MCP client injected via closure (not in state)
 """
@@ -60,6 +63,15 @@ def _should_audit_assumptions(state: ResearchState) -> str:
     return "synthesis"
 
 
+def _passthrough(state: ResearchState) -> NodeUpdate:
+    """No-op join barrier node.
+
+    Exists only as a synchronization point after parallel fan-out.
+    LangGraph merges state from both parallel branches before continuing.
+    """
+    return NodeUpdate(current_node="analysis_join")
+
+
 def build_graph(config: AgentConfig, mcp: ResearchKBClient) -> CompiledStateGraph:  # type: ignore[type-arg]
     """Construct the research analysis graph.
 
@@ -102,18 +114,25 @@ def build_graph(config: AgentConfig, mcp: ResearchKBClient) -> CompiledStateGrap
     graph.add_node("literature_search", _literature_search)
     graph.add_node("concept_explorer", _concept_explorer)
     graph.add_node("citation_analyzer", _citation_analyzer)
+    graph.add_node("analysis_join", _passthrough)
     graph.add_node("assumption_auditor", _assumption_auditor)
     graph.add_node("synthesis", _synthesis_writer)
 
-    # Define edges
+    # Sequential: planner → literature search
     graph.set_entry_point("query_planner")
     graph.add_edge("query_planner", "literature_search")
-    graph.add_edge("literature_search", "concept_explorer")
-    graph.add_edge("concept_explorer", "citation_analyzer")
 
-    # Conditional: citation_analyzer -> assumption_auditor OR synthesis
+    # Fan-out: literature_search → {concept_explorer, citation_analyzer}
+    graph.add_edge("literature_search", "concept_explorer")
+    graph.add_edge("literature_search", "citation_analyzer")
+
+    # Join barrier: both parallel branches merge state here
+    graph.add_edge("concept_explorer", "analysis_join")
+    graph.add_edge("citation_analyzer", "analysis_join")
+
+    # Conditional: analysis_join → assumption_auditor OR synthesis
     graph.add_conditional_edges(
-        "citation_analyzer",
+        "analysis_join",
         _should_audit_assumptions,
         {
             "assumption_auditor": "assumption_auditor",
@@ -193,6 +212,7 @@ def _summarize_update(node_name: str, update: dict[str, Any]) -> str:
         "literature_search": f"Found {len(update.get('search_results', []))} search results",
         "concept_explorer": f"Explored {len(update.get('concepts', []))} concepts",
         "citation_analyzer": f"Analyzed {len(update.get('citations', []))} citation chains",
+        "analysis_join": "Analysis complete (parallel join)",
         "assumption_auditor": f"Audited {len(update.get('assumption_audits', []))} methods",
         "synthesis": f"Generated report ({len(update.get('report', ''))} chars)",
     }

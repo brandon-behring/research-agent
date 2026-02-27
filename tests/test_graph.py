@@ -17,6 +17,7 @@ import pytest
 from research_agent.config import AgentConfig, MCPConfig, ModelConfig
 from research_agent.graph import (
     StreamEvent,
+    _passthrough,
     _should_audit_assumptions,
     _summarize_update,
     build_graph,
@@ -220,6 +221,16 @@ class TestStateModels:
         assert task.methods_to_audit == []
 
 
+class TestPassthrough:
+    """Tests for the analysis_join passthrough node."""
+
+    def test_returns_node_update(self) -> None:
+        """Passthrough returns NodeUpdate with current_node set."""
+        state = ResearchState(query="test")
+        result = _passthrough(state)
+        assert result["current_node"] == "analysis_join"
+
+
 class TestSummarizeUpdate:
     """Tests for the _summarize_update helper."""
 
@@ -240,6 +251,11 @@ class TestSummarizeUpdate:
         update = {"report": "A" * 500}
         result = _summarize_update("synthesis", update)
         assert "500 chars" in result
+
+    def test_analysis_join_summary(self) -> None:
+        """Summarizes analysis_join passthrough."""
+        result = _summarize_update("analysis_join", {})
+        assert "parallel join" in result.lower()
 
     def test_unknown_node(self) -> None:
         """Unknown node gets generic summary."""

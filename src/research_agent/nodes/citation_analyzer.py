@@ -22,7 +22,8 @@ logger = logging.getLogger(__name__)
 # Timeout for all citation analysis (network + biblio coupling).
 _CITATION_TIMEOUT_SECONDS = 45
 
-# Maximum search results to analyze for citation networks.
+# Maximum search results to analyze for citation networks (fallback default).
+# Prefer config.top_results_for_citations at runtime.
 _TOP_RESULTS_LIMIT = 5
 
 # Max concurrent source analyses. Conservative: each source fires 2 MCP calls,
@@ -364,8 +365,9 @@ async def citation_analyzer(
 
     citations: list[CitationInfo] = []
 
-    # Deduplicate source_ids, take top N by score
-    top_results = [r for r in state.search_results if r.source_id][:_TOP_RESULTS_LIMIT]
+    # Deduplicate source_ids, take top N by score (configurable)
+    limit = config.top_results_for_citations
+    top_results = [r for r in state.search_results if r.source_id][:limit]
     unique_results = []
     seen: set[str] = set()
     for r in top_results:

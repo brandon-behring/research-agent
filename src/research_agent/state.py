@@ -7,9 +7,19 @@ Each node returns a partial dict — LangGraph merges updates into state automat
 
 from __future__ import annotations
 
-from typing import Any, TypedDict
+from typing import Annotated, Any, TypedDict
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+
+def _last_value(current: str, update: str) -> str:
+    """Reducer for concurrent updates: last writer wins.
+
+    Required for fields written by parallel fan-out nodes (e.g., current_node
+    from concept_explorer and citation_analyzer running concurrently).
+    """
+    return update
+
 
 # ── Immutable sub-models ─────────────────────────────────────────────
 
@@ -180,7 +190,7 @@ class ResearchState(BaseModel):
     confidence_assessment: str = ""
 
     # --- Metadata ---
-    current_node: str = ""
+    current_node: Annotated[str, _last_value] = ""
 
 
 # ── Typed node return ────────────────────────────────────────────────
