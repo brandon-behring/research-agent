@@ -4,7 +4,7 @@ Architecture:
     This module abstracts the MCP transport (stdio or HTTP) so agent nodes
     call clean Python methods without knowing how research-kb is connected.
 
-    Thirteen tools exposed (of research-kb's 21):
+    Thirteen tools exposed (of research-kb's 22):
 
     JSON tools (output_format='json'):
         1. search           -- 4-signal hybrid search (BM25 + vector + graph + PageRank)
@@ -123,7 +123,7 @@ class ResearchKBClient:
             )
 
         python_cmd = (
-            self._config.research_kb_python or f"{self._config.research_kb_path}/venv/bin/python"
+            self._config.research_kb_python or f"{self._config.research_kb_path}/.venv/bin/python"
         )
         server_params = StdioServerParameters(
             command=python_cmd,

@@ -45,7 +45,7 @@ class TestCustomPythonPath:
     """Tests for RESEARCH_KB_PYTHON configuration."""
 
     def test_custom_python_path_env_var(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """RESEARCH_KB_PYTHON env var overrides default venv/bin/python."""
+        """RESEARCH_KB_PYTHON env var overrides default .venv/bin/python."""
         monkeypatch.setenv("RESEARCH_KB_PYTHON", "/usr/bin/python3")
         config = MCPConfig(transport="stdio", research_kb_path="/fake/path")
         assert config.research_kb_python == "/usr/bin/python3"

@@ -69,7 +69,7 @@ class MCPConfig(BaseSettings):
     research_kb_python: str = Field(
         default="",
         alias="RESEARCH_KB_PYTHON",
-        description="Python executable for stdio transport (default: {kb_path}/venv/bin/python)",
+        description="Python executable for stdio transport (default: {kb_path}/.venv/bin/python)",
     )
 
     model_config = {"frozen": True, "populate_by_name": True}

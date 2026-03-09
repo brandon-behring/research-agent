@@ -85,11 +85,11 @@ flowchart LR
 
 This agent consumes [research-kb](https://github.com/brandon-behring/research-kb), a production knowledge base system I built with:
 
-- **478 sources** in causal inference, time series, and RAG/LLM literature
-- **307K+ concepts** in a knowledge graph with typed relationships
+- **495 sources** across 22 domains (causal inference, time series, RAG/LLM, econometrics, and more)
+- **310K+ concepts** in a knowledge graph with typed relationships
 - **4-signal hybrid search**: BM25 full-text + BGE-large vectors + graph signals + PageRank citation authority
-- **20 MCP tools** for search, concept exploration, citation analysis, and assumption auditing
-- **~2,100+ tests** with comprehensive CI/CD
+- **22 MCP tools** for search, concept exploration, citation analysis, assumption auditing, and literature review
+- **~2,700+ tests** with comprehensive CI/CD
 
 The agent uses 7 of these tools:
 
@@ -141,7 +141,7 @@ cp .env.example .env
 | `MCP_TRANSPORT` | `stdio` | `stdio` (local) or `http` (Docker) |
 | `RESEARCH_KB_PATH` | | Path to research-kb repo (stdio mode) |
 | `RESEARCH_KB_URL` | `http://research-kb:8000` | HTTP endpoint (Docker mode) |
-| `RESEARCH_KB_PYTHON` | | Python executable for stdio transport (default: `{RESEARCH_KB_PATH}/venv/bin/python`) |
+| `RESEARCH_KB_PYTHON` | | Python executable for stdio transport (default: `{RESEARCH_KB_PATH}/.venv/bin/python`) |
 | `MCP_PATH` | `/mcp` | MCP endpoint path appended to HTTP URL |
 | `CACHE_ENABLED` | `true` | Enable SQLite report cache |
 | `CACHE_DB_PATH` | `~/.cache/research-agent/cache.db` | Path to SQLite cache database |
@@ -201,7 +201,7 @@ research-agent "What are the assumptions of double machine learning?"
 The agent runs six pipeline stages:
 
 1. **Query Planner** (Haiku) decomposes the question into 4-5 sub-tasks
-2. **Literature Search** runs hybrid search across 478 sources (~12 results)
+2. **Literature Search** runs hybrid search across 495 sources (~12 results)
 3. **Concept Explorer** traverses the knowledge graph (DML, Neyman orthogonality)
 4. **Citation Analyzer** maps citation networks + bibliographic coupling
 5. **Assumption Auditor** documents method assumptions from the KB

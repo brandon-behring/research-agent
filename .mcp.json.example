@@ -1,7 +1,7 @@
 {
   "mcpServers": {
     "research-kb": {
-      "command": "/path/to/research-kb/venv/bin/python",
+      "command": "/path/to/research-kb/.venv/bin/python",
       "args": ["-m", "research_kb_mcp.server"],
       "cwd": "/path/to/research-kb",
       "description": "Search causal inference literature with hybrid FTS+vector+graph retrieval"
