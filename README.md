@@ -93,6 +93,8 @@ These are **architectural rationale** — why the system is shaped the way it is
 
 ## Built on research-kb
 
+*(corpus stats below current as of 2026-04-29; for live numbers run the `research_kb_stats` MCP tool against your local instance)*
+
 This agent consumes [research-kb](https://github.com/brandon-behring/research-kb), a production knowledge base system I built with:
 
 - **495 sources** across 22 domains (causal inference, time series, RAG/LLM, econometrics, and more)
