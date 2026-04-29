@@ -22,18 +22,23 @@ flowchart TD
     LS["Literature Search<br/><i>hybrid + fast_search fallback</i>"]
     CE["Concept Explorer<br/><i>detail + 2-hop neighborhoods</i>"]
     CA["Citation Analyzer<br/><i>networks + biblio coupling</i>"]
+    AJ["analysis_join<br/><i>(no-op fan-in barrier)</i>"]
     AA["Assumption Auditor<br/><i>method assumptions</i>"]
+    CN["Connection Explorer<br/><i>graph paths between concept pairs</i>"]
     SW["Synthesis Writer<br/><i>Sonnet — deep reasoning</i>"]
     R["Structured Report"]
 
     Q --> QP
     QP -->|"sub_tasks, search_queries"| LS
     LS -->|"search_results"| CE
-    CE -->|"concepts"| CA
-    CA --> D{methods<br/>to audit?}
+    LS -->|"search_results"| CA
+    CE --> AJ
+    CA --> AJ
+    AJ --> D{methods<br/>to audit?}
     D -->|Yes| AA
-    D -->|No| SW
-    AA -->|"assumption_audits"| SW
+    D -->|No| CN
+    AA -->|"assumption_audits"| CN
+    CN -->|"connection_paths"| SW
     SW --> R
 ```
 
@@ -46,6 +51,7 @@ flowchart LR
         CE2["Concept Explorer"]
         CA2["Citation Analyzer"]
         AA2["Assumption Auditor"]
+        CN2["Connection Explorer"]
     end
 
     subgraph KB["research-kb MCP Server"]
@@ -56,6 +62,7 @@ flowchart LR
         CN["citation_network"]
         BC["biblio_coupling"]
         AU["audit_assumptions"]
+        EC["explain_connection"]
     end
 
     LS2 -->|"via ResearchKBClient<br/>(stdio | HTTP)"| S
@@ -65,6 +72,7 @@ flowchart LR
     CA2 --> CN
     CA2 --> BC
     AA2 --> AU
+    CN2 --> EC
 ```
 
 ### Design Decisions
@@ -91,7 +99,7 @@ This agent consumes [research-kb](https://github.com/brandon-behring/research-kb
 - **22 MCP tools** for search, concept exploration, citation analysis, assumption auditing, and literature review
 - **~2,700+ tests** with comprehensive CI/CD
 
-The agent uses 7 of these tools:
+The agent uses 8 of these tools:
 
 | Tool | Purpose |
 |------|---------|
@@ -102,6 +110,7 @@ The agent uses 7 of these tools:
 | `research_kb_citation_network` | Find citing/cited-by chains |
 | `research_kb_biblio_coupling` | Related papers via shared reference overlap |
 | `research_kb_audit_assumptions` | Method assumption documentation |
+| `research_kb_explain_connection` | Graph path between concept pairs (deterministic, ~250ms) |
 
 ## Quickstart
 
@@ -133,19 +142,29 @@ cp .env.example .env
 # Edit .env with your API key and research-kb path
 ```
 
-**Environment variables:**
+**Environment variables** (full list — auto-loaded by `pydantic-settings` from `AgentConfig` in `config.py`):
 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `ANTHROPIC_API_KEY` | *(required)* | Anthropic API key |
+| `PLANNING_MODEL` | `claude-haiku-4-5-20251001` | Model for query decomposition (fast, cheap) |
+| `SYNTHESIS_MODEL` | `claude-sonnet-4-6` | Model for report synthesis (strong reasoning) |
 | `MCP_TRANSPORT` | `stdio` | `stdio` (local) or `http` (Docker) |
 | `RESEARCH_KB_PATH` | | Path to research-kb repo (stdio mode) |
 | `RESEARCH_KB_URL` | `http://research-kb:8000` | HTTP endpoint (Docker mode) |
 | `RESEARCH_KB_PYTHON` | | Python executable for stdio transport (default: `{RESEARCH_KB_PATH}/.venv/bin/python`) |
 | `MCP_PATH` | `/mcp` | MCP endpoint path appended to HTTP URL |
+| `MAX_SEARCH_RESULTS` | `10` | Maximum results per search query (1-50) |
+| `MAX_CONCEPTS` | `15` | Maximum concepts to explore (1-50) |
+| `MAX_CITATIONS` | `20` | Maximum citation chains per source (1-50) |
+| `TOP_RESULTS_FOR_CITATIONS` | `5` | Top search results to analyze for citation networks (1-20) |
+| `MAX_SIMILAR_CONCEPTS` | `5` | Max embedding-similar concepts collected across explored concepts (1-20) |
+| `ENABLE_CROSS_DOMAIN` | `true` | Enable cross-domain concept bridging in concept explorer |
+| `SYNTHESIS_TIMEOUT` | `120` | Timeout in seconds for synthesis LLM call (30-300) |
+| `NODE_TIMEOUTS` | *(per-node dict)* | Per-node timeout overrides; defaults: planner 60s, search 120s, explorer 90s, citations 90s, auditor 60s, connection 60s, synthesis 180s |
 | `CACHE_ENABLED` | `true` | Enable SQLite report cache |
 | `CACHE_DB_PATH` | `~/.cache/research-agent/cache.db` | Path to SQLite cache database |
-| `CACHE_TTL_HOURS` | `24` | Hours before cached reports expire |
+| `CACHE_TTL_HOURS` | `24` | Hours before cached reports expire (>0, ≤720) |
 
 ### Custom LLM Providers
 
@@ -174,6 +193,9 @@ research-agent -v "Compare DML and instrumental variables"
 # Stream progress to stderr as nodes complete
 research-agent --stream "What are the assumptions of DML?"
 
+# Structured JSON output (for programmatic consumption)
+research-agent --json "What are the assumptions of DML?"
+
 # Save report to file
 research-agent -o report.md "How does cross-fitting reduce bias?"
 
@@ -198,16 +220,17 @@ docker-compose run agent "Query here"
 research-agent "What are the assumptions of double machine learning?"
 ```
 
-The agent runs six pipeline stages:
+The agent runs seven pipeline stages (with `concept_explorer` and `citation_analyzer` running in parallel after `literature_search`, fanned in via a no-op `analysis_join` barrier, then `assumption_auditor` conditionally before `connection_explorer` and `synthesis`):
 
 1. **Query Planner** (Haiku) decomposes the question into 4-5 sub-tasks
 2. **Literature Search** runs hybrid search across 495 sources (~12 results)
 3. **Concept Explorer** traverses the knowledge graph (DML, Neyman orthogonality)
 4. **Citation Analyzer** maps citation networks + bibliographic coupling
-5. **Assumption Auditor** documents method assumptions from the KB
-6. **Synthesis Writer** (Sonnet) produces a structured report with citations
+5. **Assumption Auditor** documents method assumptions from the KB *(conditional — only runs when methods are present)*
+6. **Connection Explorer** traces graph paths between concept pairs flagged by the planner (deterministic, ~250ms per pair)
+7. **Synthesis Writer** (Sonnet) produces a structured report with citations
 
-Total time: ~3 minutes. Output: ~15K char report with 7 sections.
+Typical end-to-end latency: 191-210s observed in eval baselines (`docs/eval_baselines.md`). Output: ~15K char report with 7 sections.
 
 <details>
 <summary>Full report output</summary>
@@ -356,19 +379,23 @@ pytest tests/test_nodes.py -v
 ```
 src/research_agent/
 ├── __init__.py
-├── graph.py              # LangGraph StateGraph + conditional edges
-├── state.py              # Pydantic state schema
-├── config.py             # Model selection, MCP endpoint config
+├── graph.py              # LangGraph StateGraph + conditional edges + analysis_join barrier
+├── state.py              # Pydantic state schema (frozen sub-models)
+├── config.py             # Model selection, MCP endpoints, per-node timeouts
 ├── cache.py              # SQLite report cache (query hash + TTL)
 ├── mcp_client.py         # Thin wrapper calling research-kb MCP tools
 ├── cli.py                # CLI entry point
+├── llm.py                # Provider-agnostic model dispatch (init_chat_model)
+├── parsing.py            # Shared parsing utilities
+├── exceptions.py         # MCPToolError, NodeTimeoutError, PlannerError
 └── nodes/
-    ├── query_planner.py      # Decomposes question into sub-tasks
-    ├── literature_search.py  # Hybrid search with fallback
-    ├── concept_explorer.py   # Knowledge graph traversal
-    ├── citation_analyzer.py  # Citation networks + biblio coupling
-    ├── assumption_auditor.py # Method assumption documentation
-    └── synthesis.py          # Final structured report
+    ├── query_planner.py        # Decomposes question into sub-tasks
+    ├── literature_search.py    # Hybrid search with fast_search fallback
+    ├── concept_explorer.py     # Knowledge graph traversal + cross-domain bridging
+    ├── citation_analyzer.py    # Citation networks + biblio coupling
+    ├── assumption_auditor.py   # Method assumption documentation
+    ├── connection_explorer.py  # Graph paths between concept pairs (deterministic)
+    └── synthesis.py            # Final structured report
 ```
 
 ## Eval Baselines
