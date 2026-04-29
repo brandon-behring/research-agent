@@ -24,7 +24,8 @@ $(SPEC_DOCX): $(SPEC_SRC)
 
 $(SPEC_PDF): $(SPEC_SRC)
 	@mkdir -p $(BUILD_DIR)
-	pandoc $(SPEC_SRC) -o $@ --pdf-engine=xelatex --toc --toc-depth=3 --number-sections
+	pandoc $(SPEC_SRC) -o $@ --pdf-engine=xelatex --toc --toc-depth=3 --number-sections \
+	  -V mainfont="DejaVu Serif" -V monofont="DejaVu Sans Mono"
 	@echo "Built: $@"
 
 spec-clean:
