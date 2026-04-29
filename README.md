@@ -406,6 +406,17 @@ src/research_agent/
 
 See [docs/eval_baselines.md](docs/eval_baselines.md) for LLM-as-judge scoring methodology, golden case definitions, and reproduction instructions.
 
+## Build Artifacts
+
+The SRS in `docs/REQUIREMENTS_SPEC.md` can be rendered to Word + PDF for downstream consumption:
+
+```bash
+make spec       # produces build/research-agent-SRS.docx + .pdf via Pandoc
+make spec-clean # removes build/
+```
+
+Requires `pandoc` and a LaTeX engine (`xelatex` by default; on Debian/Ubuntu: `apt install pandoc texlive-xetex texlive-fonts-recommended`).
+
 ## Roadmap
 
 See [ROADMAP.md](ROADMAP.md) for planned improvements including architecture diagrams, persistent session memory, tool-call planning mode, and multi-KB routing.
