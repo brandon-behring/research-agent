@@ -75,7 +75,9 @@ flowchart LR
     CN2 --> EC
 ```
 
-### Design Decisions
+## Architecture Decisions
+
+These are **architectural rationale** — why the system is shaped the way it is. They're ADR-style notes, not formal requirements. For *what* the system must do, *how* it will be validated, and the full FR/NFR/use-case specification, see [`docs/REQUIREMENTS_SPEC.md`](docs/REQUIREMENTS_SPEC.md).
 
 1. **LangGraph over CrewAI/Agent SDK** — Vendor-agnostic, fine-grained state control, conditional routing, proven in production across multiple personal projects.
 
