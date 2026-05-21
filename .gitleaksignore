@@ -1,0 +1,4 @@
+# False positives: BibTeX-style citation keys in design docs (high entropy
+# from author+year+topic concat triggers generic-api-key rule). These are
+# bibliographic identifiers, not credentials.
+docs/plans/active/synthesis_kb_migration_2026-05-21.md:generic-api-key:78
