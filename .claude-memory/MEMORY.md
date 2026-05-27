@@ -10,6 +10,7 @@
 - [Pacing: one question per round](feedback_pacing_one_question.md) — for `/exploring-options` sessions, depth not breadth
 - [User owns runpod-deploy](user_runpod_deploy.md) — Tier-2 GPU escalation path
 - [brandon-behring.dev reference](reference_brandon_behring_dev.md) — Astro + Cloudflare Workers; tracked issue #1 on that repo for synthesis-kb integration
+- [Memory synced via git](reference_memory_synced_via_git.md) — .claude-memory/ symlinked into repo; memory writes dirty the working tree (expected)
 
 ## Legacy reference (research-agent as-it-stands until M6 archival)
 
