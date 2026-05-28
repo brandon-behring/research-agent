@@ -1,11 +1,11 @@
 # Research-Agent Memory Index
 
-> Last updated: 2026-05-27 | Status: **North-star LOCKED — KB = cross-domain connections first + rigor/assumption-transparency backbone, "actually used"; execution paused/backlogged. research-agent dormant.**
+> Last updated: 2026-05-28 | Status: **Primary KB LIVE & mature on desktop (2,200 src / 1.68M chunks / 36 domains); cache is a ~1,668-doc ingestion gap AND not-yet-RAG-ready (81% raw-HTML text, arXiv=abstract pages); arXiv-PDF→GROBID path validated 2026-05-28. synthesis-kb KG deferred. North-star unchanged: connections-first + rigor + "actually used".**
 
 ## Current Direction (2026-05-27)
 
 - [synthesis-kb planned](synthesis_kb_planned.md) — unified **all-domain** sibling KB to research-kb; **design-&-de-risk-first** (2026-05-27 reframe). Approved plan: `~/.claude/plans/dig-deep-and-understand-sparkling-cloud.md`; design foundation: `research-agent/docs/plans/active/synthesis_kb_migration_2026-05-21.md`
-- [research-kb on desktop](research_kb_desktop.md) — its queryable code lives on the desktop; deploy there (→ `~/Claude/research_cache`) before primary-side KB work
+- [research-kb on desktop](research_kb_desktop.md) — **LIVE & mature on desktop** (2,200 src / 1.68M chunks / 36 domains); open work = close the cache→KB gap (1,668 docs) + make cache RAG-ready (arXiv→PDF, web→re-extract)
 - [KB north-star](kb_north_star.md) — **the validated purpose**: cross-domain connections first + rigor backbone + "actually used"; DB is an eventual uncommitted scale path. Full doc: `~/.claude/plans/dig-deep-and-understand-sparkling-cloud.md`
 - [User: ML generalist](user_ml_generalist.md) — mathematically-rigorous ML generalist; #1 goal = senior/staff ML role; broad interests, connections excite him most
 - [Feedback: understand before executing](feedback_understand_before_executing.md) — deep goal-grounding + inconsistency-checking BEFORE execution; planning is his thinking space

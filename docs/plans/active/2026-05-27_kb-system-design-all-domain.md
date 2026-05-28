@@ -8,6 +8,8 @@ and milestone detail (§8); all of it stands unless this doc says otherwise. Thi
 spike settled.** Execution plan: `~/.claude/plans/dig-deep-and-understand-sparkling-cloud.md`. Corpus
 catalogue: `~/Claude/research_INDEX.md`.
 
+> **RECONCILED 2026-05-28 (desktop):** §7 step-0 (deploy research-kb) is **DONE** — the instance is live & mature (**2,200 src / 1.68M chunks / 36 domains**; only 4 have concepts). §7 step-1 is **NOT** a fresh greenfield ingest: the research_cache is **near-disjoint** from the live KB (only 8 of 1,676 sha256s shared) → a **~1,668-source addition** needing a NEW cache-aware ingester (`ingest_corpus.py` is a hardcoded PDF manifest; §5 "point ingestion at the cache" assumed tooling that does not exist). **Cache is NOT RAG-ready**: 81% of `text/` is raw HTML and arXiv entries are abstract *pages*, not papers → the real first step is re-extraction / PDF-fetch (arXiv-PDF→GROBID **validated 2026-05-28**: 5/5 clean full-text + 610 refs, file_hash dedup confirmed). Q14 multi-machine sync confirmed: KB on desktop, corpus+toolkit on laptop (Mac). Disk: desktop root 96% full (~36G free).
+
 ## 1. What the system is
 
 Three layers, strict epistemic separation, unified across **all domains** (agents · causal/econ ·

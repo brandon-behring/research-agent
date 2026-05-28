@@ -1,6 +1,6 @@
 ---
 name: synthesis-kb-planned
-description: A new sibling repo to research-kb is planned (synthesis-kb) that indexes synthesized dossiers; research-agent is to be archived. Authoritative design doc lives at ~/.claude/plans/i-want-to-think-foamy-summit.md.
+description: A new sibling repo (synthesis-kb) is planned to index synthesized dossiers into a knowledge graph; deferred ("eventually") per 2026-05-28. Canonical design = research-agent/docs/plans/active/2026-05-27_kb-system-design-all-domain.md (foundation synthesis_kb_migration_2026-05-21.md).
 metadata:
   node_type: memory
   type: project
@@ -44,4 +44,4 @@ Long-term goal: public synthesis-map at `brandon-behring.dev/knowledge` consumin
 
 ## Authoritative reference
 
-Design foundation: `~/Claude/research-agent/docs/plans/active/synthesis_kb_migration_2026-05-21.md` (the canonical synthesis-kb design; the earlier `~/.claude/plans/i-want-to-think-foamy-summit.md` no longer exists). **Locked v2 (all-domain, four-purpose) design: `~/Claude/research-agent/docs/plans/active/2026-05-27_kb-system-design-all-domain.md`** (records the decisions the de-risk spike settled). Current approved execution plan (all-domain reframe + corpus-in-order): `~/.claude/plans/dig-deep-and-understand-sparkling-cloud.md`.
+Design foundation: `~/Claude/research-agent/docs/plans/active/synthesis_kb_migration_2026-05-21.md` (the canonical synthesis-kb design; the earlier `~/.claude/plans/i-want-to-think-foamy-summit.md` is superseded — retained on some machines, not authoritative). **Locked v2 (all-domain, four-purpose) design: `~/Claude/research-agent/docs/plans/active/2026-05-27_kb-system-design-all-domain.md`** (records the decisions the de-risk spike settled). Current approved execution plan (all-domain reframe + corpus-in-order): `~/.claude/plans/dig-deep-and-understand-sparkling-cloud.md`.
