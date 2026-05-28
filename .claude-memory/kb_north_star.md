@@ -1,0 +1,21 @@
+---
+name: kb-north-star
+description: Validated purpose of the unified research KB — cross-domain connections first, rigor/assumption-transparency backbone, "actually used" prime directive, synthesis-kb DB is an eventual uncommitted scale path
+metadata:
+  node_type: memory
+  type: project
+---
+
+The unified research KB's **validated purpose** (locked 2026-05-27): **surface & make explorable the cross-domain CONNECTIONS** (theory↔application bridges — dynamical-systems→SSMs, control→RL→pricing, causal→experimentation), with **mathematical rigor + assumption-transparency** as the backbone.
+
+Three roles: (1) research **backbone** for the book library; (2) a genuinely-**used** idea-exploration tool; (3) a public explorable **supplement** on `brandon-behring.dev` (concept relationships + the assumptions behind each book's claims — rigor on display).
+
+**Prime directive: "actually used."** Lean, file-based, explorable beats heavy unused infra (the [[research-agent-archived]] trap). The synthesis-kb **DB is an eventual, UNCOMMITTED scale path** (see [[synthesis-kb-planned]]) — adopt only if the file-KG proves used-and-limited. No deadline; long game.
+
+**End-state ("good"):** explorable cross-domain map on brandon-behring.dev (browse concepts → bridges → drill to claims + source-assumptions), fed by strict-live dossiers + the taxonomy graph via the existing `graph.json → CitationGraph` pipeline.
+
+Full north-star: `~/.claude/plans/dig-deep-and-understand-sparkling-cloud.md`. Corpus catalogue: `~/Claude/research_INDEX.md`. Scope = eventually all projects (tagged) but a long backlog; near-term operate on ready strict-live only. De-risk spike proved the file-KG already delivers cross-domain bridges (0 collisions, 18 bridges). Built 2026-05-27 (laptop): the cross-domain `graph.json` + local explorable map (`~/Claude/research_graph.html`); 4 v1→v3 ML upgrades (rlhf/peft/calibration/eval_methodology); 3 **authored** cross-domain bridge dossiers (dynsys↔SSMs, control↔RL, causal↔experimentation — all verify_citations-clean). **Key finding:** cheap auto-bridging (TF-IDF *or* embeddings over raw claim text) does NOT reliably surface conceptual cross-domain bridges — they need *authored* bridge dossiers (proven) or real concept-extraction + corpus cleaning (the eventual concept layer / [[synthesis-kb-planned]] DB). Reliable cross-domain signal = the **shared-source graph + authored bridges**; see `~/Claude/research_BACKLOG.md` §D1.
+
+**END-Q2 PUSH locked 2026-05-28** ([[feedback-understand-before-executing]] grounded across 4 rounds): goal = research-kb + synthesis-kb live on desktop + brandon-behring.dev Cytoscape viz with assumption-transparency drill-down by June 30 (33 days from 2026-05-28). Stance = **full commit, no slack** (~0 hunt activities; KB serves as long-game mastery + credibility); open decisions get fast calls + 24h override. Locked: desktop has research-kb already cloned/deployed ([[research-kb-desktop]]); tarball is bootstrap, ongoing sync = iCloud (cache) + git (dossier files); concept-extractor = Claude API first pass; bibkey↔source-UUID = auto-match URL+sha256 with CSV override.
+
+**Day-1 (2026-05-28) shipped:** Wave-3 trio (recsys + experimentation-methodology + pricing-revenue-opt — all verify-clean + manual round-1 audit notes labeled honestly per the no-CoVe-Task-tool environment); cache-quality fixes A+C+D (consolidation, re-extract bad text, dedup); E (4 v2→v3 re-gathers with full regression-check via the new [[feedback-regression-check-on-regather]] discipline — zero real regressions, all 4 v3 strictly better, INDEX updated with compare reports); W4 (2 cross-domain bridges: `bridge_temporal_causal` g-formula↔IPTW↔dynamic-DML↔synth-control↔Granger, `bridge_ssm_control` Lyapunov↔controllability↔Kalman-LQR-LQG↔stable-parametrizations↔feedback-control). Corpus state end-of-day: **73 dossiers, 2,037 claims, 1,619 cached blobs (372 MB), 5 bridges, 11 domain clusters.** Still in flight (user-async): fix B Wayback retry (66→101 dangling), local-cache rm cleanup (19 stale dirs). Related: [[user-ml-generalist]], [[research-kb-desktop]], [[feedback-regression-check-on-regather]].

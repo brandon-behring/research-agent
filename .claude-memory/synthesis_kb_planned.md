@@ -7,7 +7,9 @@ metadata:
   originSessionId: 1b78bb6c-1471-47e2-8fd6-4d21b96dec31
 ---
 
-**Status (2026-05-21)**: Architecture approved, not yet built. M0 begins next.
+**Status (2026-05-27)**: Reaffirmed + reframed. synthesis-kb is still wanted, but the approach is now **design-&-de-risk-first** (not "M0 begins next"); scope is **unified all-domain** (agents + causal inference + ML security + computational math) serving **four goals** (books · mastery/recall · cross-domain discovery · public map); near-term win is **"corpus in order"** (all ~36 strict-live dossiers pass `cross_stage` validation as of 2026-05-27 — the work is consolidate caches + export stragglers + catalogue, not fixing broken dossiers). Sequencing: **primaries-first**. research-kb's query layer is on the **desktop** — see [[research-kb-desktop]]. Approved execution plan: `~/.claude/plans/dig-deep-and-understand-sparkling-cloud.md`.
+
+**Status (2026-05-21, historical)**: Architecture approved, not yet built. M0 begins next.
 
 ## Target four-repo state
 
@@ -42,4 +44,4 @@ Long-term goal: public synthesis-map at `brandon-behring.dev/knowledge` consumin
 
 ## Authoritative reference
 
-Full design at `~/.claude/plans/i-want-to-think-foamy-summit.md` — that file is the canonical source; this memory is the lookup pointer.
+Design foundation: `~/Claude/research-agent/docs/plans/active/synthesis_kb_migration_2026-05-21.md` (the canonical synthesis-kb design; the earlier `~/.claude/plans/i-want-to-think-foamy-summit.md` no longer exists). **Locked v2 (all-domain, four-purpose) design: `~/Claude/research-agent/docs/plans/active/2026-05-27_kb-system-design-all-domain.md`** (records the decisions the de-risk spike settled). Current approved execution plan (all-domain reframe + corpus-in-order): `~/.claude/plans/dig-deep-and-understand-sparkling-cloud.md`.

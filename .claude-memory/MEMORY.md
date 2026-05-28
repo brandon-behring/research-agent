@@ -1,12 +1,17 @@
 # Research-Agent Memory Index
 
-> Last updated: 2026-05-21 | Status: **research-agent slated for archival; synthesis-kb is the successor**
+> Last updated: 2026-05-27 | Status: **North-star LOCKED — KB = cross-domain connections first + rigor/assumption-transparency backbone, "actually used"; execution paused/backlogged. research-agent dormant.**
 
-## Current Direction (2026-05-21)
+## Current Direction (2026-05-27)
 
-- [synthesis-kb planned](synthesis_kb_planned.md) — new sibling RAG to research-kb; plan at `~/.claude/plans/i-want-to-think-foamy-summit.md`
+- [synthesis-kb planned](synthesis_kb_planned.md) — unified **all-domain** sibling KB to research-kb; **design-&-de-risk-first** (2026-05-27 reframe). Approved plan: `~/.claude/plans/dig-deep-and-understand-sparkling-cloud.md`; design foundation: `research-agent/docs/plans/active/synthesis_kb_migration_2026-05-21.md`
+- [research-kb on desktop](research_kb_desktop.md) — its queryable code lives on the desktop; deploy there (→ `~/Claude/research_cache`) before primary-side KB work
+- [KB north-star](kb_north_star.md) — **the validated purpose**: cross-domain connections first + rigor backbone + "actually used"; DB is an eventual uncommitted scale path. Full doc: `~/.claude/plans/dig-deep-and-understand-sparkling-cloud.md`
+- [User: ML generalist](user_ml_generalist.md) — mathematically-rigorous ML generalist; #1 goal = senior/staff ML role; broad interests, connections excite him most
+- [Feedback: understand before executing](feedback_understand_before_executing.md) — deep goal-grounding + inconsistency-checking BEFORE execution; planning is his thinking space
 - [research-agent archived at M6](research_agent_archived.md) — capabilities re-home as synthesis-kb MCP tools
 - [Epistemic separation required](feedback_epistemic_separation.md) — never conflate primary literature with synthesized claims
+- [Regression-check on regather](feedback_regression_check_on_regather.md) — when re-gathering/migrating dossiers, compare new vs. old; v3 not authoritative until checked; never silently lose curatorial work
 - [Pacing: one question per round](feedback_pacing_one_question.md) — for `/exploring-options` sessions, depth not breadth
 - [User owns runpod-deploy](user_runpod_deploy.md) — Tier-2 GPU escalation path
 - [brandon-behring.dev reference](reference_brandon_behring_dev.md) — Astro + Cloudflare Workers; tracked issue #1 on that repo for synthesis-kb integration
