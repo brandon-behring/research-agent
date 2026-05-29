@@ -1,19 +1,17 @@
 ---
 name: research-kb-desktop
-description: research-kb's deployed instance is LIVE & mature on the DESKTOP (verified 2026-05-28: 2,200 sources / 1.68M chunks / 36 domains); the open primary-side work is closing the cache→KB ingestion gap (1,668 of 1,676 cache docs not yet in) + making the cache RAG-ready
+description: research-kb is LIVE & mature on the DESKTOP and the cache→KB ingest is DONE (2026-05-29: 3,446 sources / 1.74M chunks / 36 domains, agents+ml_security now live). Next primary-side work = the KG/concept layer. Handoff doc names the gotchas.
 metadata:
   node_type: memory
   type: project
 ---
 
-research-kb's deployed instance runs on the **DESKTOP** and is **live & mature** (verified 2026-05-28 via MCP health/stats): **2,200 sources · 1,682,826 chunks · 311,591 concepts · 745,336 relationships · 55,503 citations · 36 domains** (concepts in only 4: causal_inference, rag_llm, time_series, deep_learning; the other 32 are vector/FTS-only). Stack running: `research-kb-postgres` (:5432), `research-kb-grobid` (:8070), grafana, prometheus. Code (Postgres + pgvector + Kuzu + FastMCP) is at `~/Claude/research-kb`; embedding = `BAAI/bge-large-en-v1.5` (1024-dim) via a SentenceTransformer daemon. *(Machine-explicit because this memory is git-synced: the DEPLOYED, queryable instance is on the desktop; the laptop (Mac) holds the corpus + toolkit.)*
+research-kb's deployed instance runs on the **DESKTOP** and is **live & mature**. Verified 2026-05-29 via MCP: **3,446 sources · 1,736,651 chunks (100% embedded) · 94,169 citations · 36 domains**. Stack (docker): `research-kb-postgres` :5432, `research-kb-grobid` :8070, grafana, prometheus; embed daemon `BAAI/bge-large-en-v1.5` (1024-dim) at `/tmp/research_kb_embed.sock`. Code at `~/Claude/research-kb`. *(Machine-explicit, git-synced: deployed instance on desktop; laptop (Mac) holds corpus + toolkit.)*
 
-**Why:** the deploy prerequisite the earlier note worried about is already satisfied — the primary layer is up and broadly populated (built from arXiv/textbook ingestion, NOT the laptop's research_cache). "Primaries-first" is no longer blocked on deployment; it is now about closing the cache→KB gap and making the cache ingestible.
+**Cache→KB ingest: DONE (2026-05-29).** The laptop's `research_cache` (near-disjoint from the prior corpus) was ingested via the new `scripts/ingest_cache.py`: **1,246 sources / 53,825 chunks** — arXiv (633, via real-PDF fetch→GROBID TEI, since cached `/abs` HTML is abstract-only), journal HTML (161, trafilatura), cache PDFs (61, GROBID), frontier web (391, tagged `source_class=web` + short half-life). New domains **`agents` (205 src)** + **`ml_security` (78)** are live & searchable. Commits: research-kb `5c2278d` (ingester) + `5427669` (#18 fix). The #18 `citation_network` MCP bug (formatters did attr-access on dict items) is fixed.
 
-**How to apply (open primary-side work, 2026-05-28):**
-1. The laptop's `research_cache` is **near-disjoint** from the live KB — only 8 of 1,676 cache sha256s are in `sources.file_hash`; the other **1,668 are a real ingestion gap**.
-2. The cache is **NOT RAG-ready**: 81% of `text/` is raw-HTML-polluted and arXiv entries are abstract *pages*, not papers. First step = make it ingestible — for arXiv, **fetch real PDFs (`arxiv.org/pdf/<id>`) → GROBID** (validated 2026-05-28: 5/5 papers, clean full-text + 610 refs, file_hash dedup confirmed via Mamba); for other web, re-extract clean prose.
-3. `ingest_corpus.py` is a **hardcoded PDF manifest, not a cache reader** — a new `scripts/ingest_cache.py` is needed (reuse `SourceStore.create` / `ChunkStore.create` / `EmbeddingClient.embed`; cache sha256 = `file_hash` → idempotent, so the 8 present auto-skip).
-4. Disk: root **96% full (~36 G free)** — cache ingest (~0.4 G) fits, but concept-extraction across 32 domains would need cleanup/expansion first.
+**Next primary-side work = the KG / concept-extraction layer** (the "eventually" north-star — cross-domain bridges). Only 4/36 domains have concepts; the 2 new + 30 others = 0. Gated on DISK (root 96% full; prune `research-kb/fixtures` 114G + `backups` 56G first) + an embedding/LLM-tier budget call (Anthropic Haiku ≈ $117/~4h full corpus vs Ollama ≈ 930h CPU). Suggested first pass: the 2 new frontier domains.
 
-Related: [[synthesis-kb-planned]], [[user-runpod-deploy]], [[kb-north-star]].
+**Gotchas (full list in the handoff doc):** 8 GB GPU → Docling/dispatcher OOMs, use the TEI/trafilatura path + `embed_missing.py`; MCP server caches imports → `/mcp` reconnect after enum/tool changes; `chunks.domain_id` defaults to causal_inference if unset; `/var/tmp` shared with sandboxed shell, `/tmp` not.
+
+**Full handoff:** `research-agent/docs/plans/active/2026-05-29_session-handoff.md`. Related: [[kb-north-star]], [[synthesis-kb-planned]], [[user-runpod-deploy]].

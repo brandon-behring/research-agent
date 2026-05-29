@@ -1,11 +1,12 @@
 # Research-Agent Memory Index
 
-> Last updated: 2026-05-28 | Status: **Primary KB LIVE & mature on desktop (2,200 src / 1.68M chunks / 36 domains); cache is a ~1,668-doc ingestion gap AND not-yet-RAG-ready (81% raw-HTML text, arXiv=abstract pages); arXiv-PDF→GROBID path validated 2026-05-28. synthesis-kb KG deferred. North-star unchanged: connections-first + rigor + "actually used".**
+> Last updated: 2026-05-29 | Status: **Cache→research-kb ingest DONE (desktop): 3,446 sources / 1.74M chunks / 36 domains; agents+ml_security now live. #18 citation-network bug fixed. NEXT = KG/concept layer (disk-gated) + dependabot. HANDOFF: `docs/plans/active/2026-05-29_session-handoff.md`. North-star unchanged: connections-first + rigor + "actually used".**
 
 ## Current Direction (2026-05-27)
 
 - [synthesis-kb planned](synthesis_kb_planned.md) — unified **all-domain** sibling KB to research-kb; **design-&-de-risk-first** (2026-05-27 reframe). Approved plan: `~/.claude/plans/dig-deep-and-understand-sparkling-cloud.md`; design foundation: `research-agent/docs/plans/active/synthesis_kb_migration_2026-05-21.md`
-- [research-kb on desktop](research_kb_desktop.md) — **LIVE & mature on desktop** (2,200 src / 1.68M chunks / 36 domains); open work = close the cache→KB gap (1,668 docs) + make cache RAG-ready (arXiv→PDF, web→re-extract)
+- [research-kb on desktop](research_kb_desktop.md) — **LIVE & mature on desktop** (2026-05-29: 3,446 src / 1.74M chunks / 36 domains); **cache→KB ingest DONE** (agents+ml_security live; ingester `research-kb/scripts/ingest_cache.py`); next = KG/concept layer (disk-gated)
+- [Session handoff 2026-05-29](../../../../Claude/research-agent/docs/plans/active/2026-05-29_session-handoff.md) — deferred-items playbook (KG layer, dependabot, gotchas) for the next session; full state + commits
 - [KB north-star](kb_north_star.md) — **the validated purpose**: cross-domain connections first + rigor backbone + "actually used"; DB is an eventual uncommitted scale path. Full doc: `~/.claude/plans/dig-deep-and-understand-sparkling-cloud.md`
 - [User: ML generalist](user_ml_generalist.md) — mathematically-rigorous ML generalist; #1 goal = senior/staff ML role; broad interests, connections excite him most
 - [Feedback: understand before executing](feedback_understand_before_executing.md) — deep goal-grounding + inconsistency-checking BEFORE execution; planning is his thinking space
