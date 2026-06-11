@@ -1,3 +1,11 @@
+> **SUPERSEDED (2026-06-11)** by the research-side design review:
+> `~/Claude/lever_of_archimedes/docs/plans/active/2026-06-research-side-design-review/decisions.yaml`
+> (+ research-kb `docs/decisions/0001`, synthesis-kb `docs/adr/research_side_review_2026-06.md`,
+> research_toolkit `docs/decisions/0001`, hub `docs/decisions/0008`). This doc remains the historical
+> design rationale; the build deviated (no Kuzu in synthesis-kb; Sonnet-subagent extraction with G0–G3
+> eval gates; direct in-dossier envelopes — both inboxes dropped, M0 never built and now formally dropped).
+> research-agent is archived per §7.2 of this very doc.
+
 # Design Analysis: A Personal Synthesis Layer Above research-kb
 
 ## Context
