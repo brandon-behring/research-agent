@@ -1,5 +1,7 @@
 # Roadmap
 
+> **Archived (2026-06-12)** — roadmap not pursued; see the README archive banner.
+
 Near-term and medium-term improvements for the research-agent pipeline.
 
 ---

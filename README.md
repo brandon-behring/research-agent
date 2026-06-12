@@ -5,6 +5,14 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-000000.svg)](https://docs.astral.sh/ruff/)
 
+> **ARCHIVED (2026-06-12).** This repo served its purpose — demonstrating LangGraph + MCP multi-agent
+> orchestration — and is preserved as a read-only reference (parallel fan-out pattern; 452-test suite).
+> Per its own design review ([`docs/plans/active/synthesis_kb_migration_2026-05-21.md`](docs/plans/active/synthesis_kb_migration_2026-05-21.md) §7.2):
+> the unattended-batch use case never materialized; the workflow lives on as interactive tooling —
+> knowledge queries via [research-kb](https://github.com/brandon-behring/research-kb) MCP tools,
+> dossier authoring via [research_toolkit](https://github.com/brandon-behring/research_toolkit) skills,
+> and cross-dossier claim synthesis in synthesis-kb (private).
+
 Multi-agent research analysis system powered by [LangGraph](https://github.com/langchain-ai/langgraph) and the [Model Context Protocol (MCP)](https://modelcontextprotocol.io/).
 
 Given a research question, the agent decomposes it into sub-tasks, searches a knowledge base, explores concept graphs, analyzes citation networks, audits method assumptions, and produces a structured synthesis report.
