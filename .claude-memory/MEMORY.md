@@ -1,6 +1,6 @@
 # Research-Agent Memory Index
 
-> Last updated: 2026-05-29 | Status: **Cache→research-kb ingest DONE (desktop): 3,446 sources / 1.74M chunks / 36 domains; agents+ml_security now live. #18 citation-network bug fixed. NEXT = KG/concept layer (disk-gated) + dependabot. HANDOFF: `docs/plans/active/2026-05-29_session-handoff.md`. North-star unchanged: connections-first + rigor + "actually used".**
+> Last updated: 2026-05-30 | Status: **synthesis-kb M1 + EVAL COMPLETE *and TIGHTENED* (agents domain), all committed.** `~/Claude/synthesis-kb` HEAD `bced8b4`, **9 commits**, tree clean, 49 tests green. KG (unchanged): 120 concepts / 181 anchors (100% grounded) / 120 embedded / bridges 119 shared_source (11 cross) + 52 citation_edge + 6 hub. **Eval now PANEL-adjudicated (3 independent blind source-grounded judges, replacing single-Opus-inline): L1 recall 72.7% → 75.0% PASS (κ=1.00, one defensible flip agent_evaluation); L3 citation-edge cross bridge precision 92% (unchanged); shared_source cross 45% → 36% stricter (κ=0.93). The handoff's open single-judge items are RESOLVED; "6 genuine gaps" → ~2 clean true-misses.** Details: [[synthesis-kb-eval]]. **HANDOFF: `~/Claude/synthesis-kb/docs/SESSION_HANDOFF_2026-05-30.md`** + review checklist `docs/MANUAL_REVIEW_2026-05-30.md` (the items Brandon should confirm; 2026-05-29 handoff kept as history). Next=**domain #2 ml_security** (verified viable: research-kb 148 ml_security sources + pi_portfolio dossiers in inbox). Plans: `~/.claude/plans/use-the-following-handof-mutable-sundae.md` (this session) + `...keen-matsumoto.md`. ⚠️ tool-result LAG persists — [[feedback-verify-against-source-of-truth]] (followed throughout this session).
 
 ## Current Direction (2026-05-27)
 
@@ -10,6 +10,9 @@
 - [KB north-star](kb_north_star.md) — **the validated purpose**: cross-domain connections first + rigor backbone + "actually used"; DB is an eventual uncommitted scale path. Full doc: `~/.claude/plans/dig-deep-and-understand-sparkling-cloud.md`
 - [User: ML generalist](user_ml_generalist.md) — mathematically-rigorous ML generalist; #1 goal = senior/staff ML role; broad interests, connections excite him most
 - [Feedback: understand before executing](feedback_understand_before_executing.md) — deep goal-grounding + inconsistency-checking BEFORE execution; planning is his thinking space
+- [Feedback: verify against source of truth](feedback_verify_against_source_of_truth.md) — tool results lag a round in this env; never narrate unseen results, verify against DB/file before reporting
+- [Feedback: tests vs evals](feedback_tests_vs_evals.md) — unit tests (code correctness) FIRST, evals (deployed-KG usefulness) AFTER; mirror research-kb; don't enable MCP until tested
+- [synthesis-kb eval design](synthesis_kb_eval.md) — M1 eval: 5-layer framework, full gold-set + tiers 0-2 + EVAL.md portfolio piece; verified reusable assets (ir-eval pkg etc.); audit truth (KG sound, 11 cross-dossier bridges, 9.3% orphan claims)
 - [research-agent archived at M6](research_agent_archived.md) — capabilities re-home as synthesis-kb MCP tools
 - [Epistemic separation required](feedback_epistemic_separation.md) — never conflate primary literature with synthesized claims
 - [Regression-check on regather](feedback_regression_check_on_regather.md) — when re-gathering/migrating dossiers, compare new vs. old; v3 not authoritative until checked; never silently lose curatorial work

@@ -1,6 +1,6 @@
 ---
 name: research-agent-archived
-description: research-agent (LangGraph 7-node pipeline) is to be archived under the synthesis-kb migration. It was never used in real work; capabilities re-home as synthesis-kb MCP tools.
+description: research-agent (LangGraph 7-node pipeline) ARCHIVED 2026-06-12 (RS2/R5). It was never used in real work; capabilities re-homed to research-kb MCP + research_toolkit skills + synthesis-kb. Push-based memory sync ended at archival.
 metadata:
   node_type: memory
   type: project
@@ -36,3 +36,20 @@ LangGraph orchestration (parallel fan-out, conditional routing, streaming) was d
 ## On archival
 
 At M6: add one-line README pointing to synthesis-kb. No code changes. Tests remain runnable for reference.
+
+## Archived (2026-06-12, slice RS2)
+
+Executed per the research-side review decision R5 (hub
+`lever_of_archimedes/docs/plans/active/2026-06-research-side-design-review/decisions.yaml`), which
+confirmed the May design's own §7.2/Q6 recommendation. This is the **final synced memory commit**:
+immediately after it, the README archive banner lands, dependabot PRs + issue #13 close, and
+`gh repo archive brandon-behring/research-agent` freezes the repo read-only on GitHub.
+
+- **Push-based memory sync ends here** — [[reference-memory-synced-via-git]] becomes partly stale:
+  the `~/.claude/projects/.../memory` symlink keeps working locally, but commits can no longer push.
+- One local credential string was redacted from [[synthesis-kb-planned]] before this commit
+  (the arrangement's no-secrets rule; the repo is public).
+- Local clone stays at `~/Claude/research-agent` as the §7.2 reference copy (root cleanup = RS7).
+- Successor stack: research-kb MCP (knowledge queries) · research_toolkit skills (dossier authoring) ·
+  synthesis-kb (claim/concept synthesis — where the migration map above effectively landed; its
+  search/provenance MCP tools are slice RS6).
